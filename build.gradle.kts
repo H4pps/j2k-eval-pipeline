@@ -1,8 +1,9 @@
 plugins {
     kotlin("jvm") version "2.3.20"
+    application
 }
 
-group = "org.example"
+group = "iurii.bulanov"
 version = "1.0-SNAPSHOT"
 
 repositories {
@@ -10,11 +11,16 @@ repositories {
 }
 
 dependencies {
+    implementation("org.snakeyaml:snakeyaml-engine:2.9")
     testImplementation(kotlin("test"))
 }
 
 kotlin {
-    jvmToolchain(25)
+    jvmToolchain(17)
+}
+
+application {
+    mainClass.set("iurii.bulanov.MainKt")
 }
 
 tasks.test {
