@@ -11,6 +11,7 @@ repositories {
 }
 
 dependencies {
+    implementation("com.github.ajalt.clikt:clikt:5.1.0")
     implementation("org.snakeyaml:snakeyaml-engine:2.9")
     testImplementation(kotlin("test"))
 }
