@@ -18,7 +18,7 @@ import kotlin.io.path.writeText
 class BenchmarkCheckoutRunner(
     private val logger: StructuredLogger = JsonLineLogger(),
     private val configParser: BenchmarkConfigParser = BenchmarkConfigParser(),
-    private val checkoutValidator: CheckoutValidator = CheckoutValidator(logger = logger)
+    private val checkoutValidator: CheckoutValidator = CheckoutValidator(logger = logger),
 ) {
     /**
      * Executes checkout validation for [request] and returns a process-style exit code.
@@ -26,7 +26,7 @@ class BenchmarkCheckoutRunner(
     fun run(request: CheckoutBenchmarkRequest): Int {
         logger.info(
             "benchmark_checkout_started",
-            mapOf("config_path" to request.configPath.toString(), "run_build" to request.runBuild)
+            mapOf("config_path" to request.configPath.toString(), "run_build" to request.runBuild),
         )
         return try {
             val config = configParser.parse(request.configPath)
@@ -41,8 +41,8 @@ class BenchmarkCheckoutRunner(
                     "repo_ref" to config.repository.ref,
                     "checkout_dir" to config.checkout.directory,
                     "java_roots_count" to config.java.sourceRoots.size,
-                    "build_commands_count" to config.build.commands.size
-                )
+                    "build_commands_count" to config.build.commands.size,
+                ),
             )
 
             val result = checkoutValidator.validate(config, request.runBuild)
@@ -54,8 +54,8 @@ class BenchmarkCheckoutRunner(
                 mapOf(
                     "id" to result.config.id,
                     "java_file_count" to result.javaFileCount,
-                    "build_status" to result.buildStatus.name.lowercase()
-                )
+                    "build_status" to result.buildStatus.name.lowercase(),
+                ),
             )
             0
         } catch (exception: Exception) {
@@ -69,12 +69,16 @@ class BenchmarkCheckoutRunner(
     /**
      * Writes GitHub Step Summary markdown for successful checkout sanity checks.
      */
-    private fun writeGitHubSummary(path: Path, configPath: Path, result: CheckoutResult) {
+    private fun writeGitHubSummary(
+        path: Path,
+        configPath: Path,
+        result: CheckoutResult,
+    ) {
         ensureWritableFile(path)
         val summary =
             buildString {
                 appendLine("## Benchmark Checkout")
-                appendLine("- Config path: `${configPath}`")
+                appendLine("- Config path: `$configPath`")
                 appendLine("- ID: `${result.config.id}`")
                 appendLine("- Name: `${result.config.name}`")
                 appendLine("- Role: `${result.config.role}`")
@@ -94,14 +98,18 @@ class BenchmarkCheckoutRunner(
     /**
      * Writes GitHub Step Summary markdown for failed checkout sanity checks.
      */
-    private fun writeGitHubFailureSummary(path: Path, configPath: Path, error: String) {
+    private fun writeGitHubFailureSummary(
+        path: Path,
+        configPath: Path,
+        error: String,
+    ) {
         ensureWritableFile(path)
         val summary =
             buildString {
                 appendLine("## Benchmark Checkout")
-                appendLine("- Config path: `${configPath}`")
+                appendLine("- Config path: `$configPath`")
                 appendLine("- Status: `failed`")
-                appendLine("- Error: `${error}`")
+                appendLine("- Error: `$error`")
             }
         path.appendText(summary)
         logger.info("github_summary_written", mapOf("path" to path.toString(), "status" to "failed"))
@@ -110,12 +118,16 @@ class BenchmarkCheckoutRunner(
     /**
      * Writes failure summary output and logs a structured error when this write itself fails.
      */
-    private fun writeGitHubFailureSummarySafely(path: Path, configPath: Path, error: String) {
+    private fun writeGitHubFailureSummarySafely(
+        path: Path,
+        configPath: Path,
+        error: String,
+    ) {
         runCatching { writeGitHubFailureSummary(path, configPath, error) }
             .onFailure { summaryException ->
                 logger.error(
                     "github_summary_failed",
-                    mapOf("path" to path.toString(), "error" to (summaryException.message ?: summaryException::class.simpleName))
+                    mapOf("path" to path.toString(), "error" to (summaryException.message ?: summaryException::class.simpleName)),
                 )
             }
     }
@@ -123,7 +135,10 @@ class BenchmarkCheckoutRunner(
     /**
      * Writes benchmark metadata and checkout results to a GitHub output file.
      */
-    private fun writeGitHubOutput(path: Path, result: CheckoutResult) {
+    private fun writeGitHubOutput(
+        path: Path,
+        result: CheckoutResult,
+    ) {
         ensureWritableFile(path)
         val outputs =
             linkedMapOf(
@@ -135,9 +150,11 @@ class BenchmarkCheckoutRunner(
                 "repo_ref" to result.config.repository.ref,
                 "repo_branch" to result.config.repository.branch,
                 "checkout_dir" to result.config.checkout.directory,
-                "java_roots" to result.config.java.sourceRoots.joinToString(", "),
+                "java_roots" to
+                    result.config.java.sourceRoots
+                        .joinToString(", "),
                 "java_file_count" to result.javaFileCount.toString(),
-                "build_status" to result.buildStatus.name.lowercase()
+                "build_status" to result.buildStatus.name.lowercase(),
             )
 
         val payload = outputs.entries.joinToString(separator = "\n", postfix = "\n") { "${it.key}=${it.value}" }
@@ -163,5 +180,5 @@ data class CheckoutBenchmarkRequest(
     val configPath: Path,
     val runBuild: Boolean,
     val githubSummaryPath: Path?,
-    val githubOutputPath: Path?
+    val githubOutputPath: Path?,
 )

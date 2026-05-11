@@ -1,11 +1,11 @@
 package iurii.bulanov.benchmark.config
 
 import iurii.bulanov.benchmark.checkout.CheckoutException
+import org.snakeyaml.engine.v2.api.Load
+import org.snakeyaml.engine.v2.api.LoadSettings
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
-import org.snakeyaml.engine.v2.api.Load
-import org.snakeyaml.engine.v2.api.LoadSettings
 
 /**
  * Parses and validates benchmark YAML configuration files.
@@ -13,9 +13,10 @@ import org.snakeyaml.engine.v2.api.LoadSettings
 class BenchmarkConfigParser {
     private val yamlLoad =
         Load(
-            LoadSettings.builder()
+            LoadSettings
+                .builder()
                 .setAllowDuplicateKeys(false)
-                .build()
+                .build(),
         )
 
     /**
@@ -38,7 +39,7 @@ class BenchmarkConfigParser {
                 upstream = requiredString(root, listOf("repository", "upstream")),
                 source = requiredString(root, listOf("repository", "source")),
                 ref = requiredString(root, listOf("repository", "ref")),
-                branch = requiredString(root, listOf("repository", "branch"))
+                branch = requiredString(root, listOf("repository", "branch")),
             )
 
         val checkoutDirectory = requiredString(root, listOf("checkout", "directory"))
@@ -59,15 +60,18 @@ class BenchmarkConfigParser {
                 BuildConfig(
                     tool = requiredString(root, listOf("build", "tool")),
                     workingDirectory = requiredString(root, listOf("build", "workingDirectory")),
-                    commands = buildCommands
-                )
+                    commands = buildCommands,
+                ),
         )
     }
 
     /**
      * Fetches a required field by path and validates it as a non-empty string.
      */
-    private fun requiredString(root: Map<*, *>, path: List<String>): String {
+    private fun requiredString(
+        root: Map<*, *>,
+        path: List<String>,
+    ): String {
         val value = requiredValue(root, path)
         if (value !is String || value.isBlank()) {
             throw CheckoutException("${path.joinToString(".")} must be a non-empty string")
@@ -78,7 +82,11 @@ class BenchmarkConfigParser {
     /**
      * Fetches a required field by path and validates it as a non-empty list of strings.
      */
-    private fun requiredNonEmptyStringList(root: Map<*, *>, path: List<String>, fieldName: String): List<String> {
+    private fun requiredNonEmptyStringList(
+        root: Map<*, *>,
+        path: List<String>,
+        fieldName: String,
+    ): List<String> {
         val value = requiredValue(root, path)
         val list = value as? List<*> ?: throw CheckoutException("$fieldName must be a non-empty list")
         if (list.isEmpty()) {
@@ -96,10 +104,14 @@ class BenchmarkConfigParser {
     /**
      * Traverses a nested map and returns the required value at [path].
      */
-    private fun requiredValue(root: Map<*, *>, path: List<String>): Any? {
+    private fun requiredValue(
+        root: Map<*, *>,
+        path: List<String>,
+    ): Any? {
         var current: Any? = root
         path.forEachIndexed { index, key ->
-            val currentMap = current as? Map<*, *> ?: throw CheckoutException("missing required config key: ${path.take(index + 1).joinToString(".")}")
+            val currentMap =
+                current as? Map<*, *> ?: throw CheckoutException("missing required config key: ${path.take(index + 1).joinToString(".")}")
             if (!currentMap.containsKey(key)) {
                 throw CheckoutException("missing required config key: ${path.joinToString(".")}")
             }

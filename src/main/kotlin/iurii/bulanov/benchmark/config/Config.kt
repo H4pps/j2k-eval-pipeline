@@ -11,7 +11,7 @@ data class BenchmarkConfig(
     val repository: RepositoryConfig,
     val checkout: CheckoutConfig,
     val java: JavaConfig,
-    val build: BuildConfig
+    val build: BuildConfig,
 )
 
 /**
@@ -21,21 +21,21 @@ data class RepositoryConfig(
     val upstream: String,
     val source: String,
     val ref: String,
-    val branch: String
+    val branch: String,
 )
 
 /**
  * Checkout location for a benchmark source tree.
  */
 data class CheckoutConfig(
-    val directory: String
+    val directory: String,
 )
 
 /**
  * Java source layout information for checkout sanity checks.
  */
 data class JavaConfig(
-    val sourceRoots: List<String>
+    val sourceRoots: List<String>,
 )
 
 /**
@@ -44,5 +44,5 @@ data class JavaConfig(
 data class BuildConfig(
     val tool: String,
     val workingDirectory: String,
-    val commands: List<String>
+    val commands: List<String>,
 )

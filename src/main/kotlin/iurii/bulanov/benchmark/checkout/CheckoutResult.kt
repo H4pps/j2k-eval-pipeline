@@ -8,7 +8,7 @@ import iurii.bulanov.benchmark.config.BenchmarkConfig
 data class CheckoutResult(
     val config: BenchmarkConfig,
     val javaFileCount: Int,
-    val buildStatus: BuildStatus
+    val buildStatus: BuildStatus,
 )
 
 /**
@@ -17,5 +17,5 @@ data class CheckoutResult(
 enum class BuildStatus {
     PASSED,
     FAILED,
-    SKIPPED
+    SKIPPED,
 }

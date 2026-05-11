@@ -2,7 +2,7 @@ package iurii.bulanov.benchmark.checkout
 
 import iurii.bulanov.benchmark.config.BenchmarkConfig
 import iurii.bulanov.benchmark.config.CheckoutDirectoryPolicy
-import iurii.bulanov.benchmark.source.JavaSourceCounter
+import iurii.bulanov.benchmark.discovery.SourceFileDiscovery
 import iurii.bulanov.logging.JsonLineLogger
 import iurii.bulanov.logging.StructuredLogger
 import iurii.bulanov.process.CommandResult
@@ -22,23 +22,26 @@ import kotlin.streams.asSequence
  */
 class CheckoutValidator(
     private val processExecutor: ProcessExecutor = ProcessExecutor(),
-    private val javaSourceCounter: JavaSourceCounter = JavaSourceCounter(),
-    private val logger: StructuredLogger = JsonLineLogger()
+    private val sourceFileDiscovery: SourceFileDiscovery = SourceFileDiscovery(),
+    private val logger: StructuredLogger = JsonLineLogger(),
 ) {
     /**
      * Checks benchmark source inputs and optionally runs configured build commands.
      */
-    fun validate(config: BenchmarkConfig, runBuild: Boolean): CheckoutResult {
+    fun validate(
+        config: BenchmarkConfig,
+        runBuild: Boolean,
+    ): CheckoutResult {
         val checkoutDirectory = Paths.get(config.checkout.directory).normalize()
         recreateCheckoutDirectory(checkoutDirectory)
 
         runRequired(
             processExecutor.run(listOf("git", "clone", config.repository.source, checkoutDirectory.toString())),
-            "failed to clone benchmark repository"
+            "failed to clone benchmark repository",
         )
         runRequired(
             processExecutor.run(listOf("git", "-C", checkoutDirectory.toString(), "checkout", "--force", config.repository.ref)),
-            "failed to checkout pinned benchmark ref"
+            "failed to checkout pinned benchmark ref",
         )
 
         val headResult = processExecutor.run(listOf("git", "-C", checkoutDirectory.toString(), "rev-parse", "HEAD"))
@@ -53,19 +56,19 @@ class CheckoutValidator(
                 mapOf(
                     "checkout_dir" to checkoutDirectory.toString(),
                     "repo_source" to config.repository.source,
-                    "repo_ref" to config.repository.ref
-                )
+                    "repo_ref" to config.repository.ref,
+                ),
         )
 
-        val javaFileCount = javaSourceCounter.countJavaFiles(checkoutDirectory, config.java.sourceRoots)
+        val javaFileCount = sourceFileDiscovery.countJavaFiles(checkoutDirectory, config.java.sourceRoots)
         logger.info(
             event = "java_sources_validated",
             fields =
                 mapOf(
                     "checkout_dir" to checkoutDirectory.toString(),
                     "java_roots" to config.java.sourceRoots,
-                    "java_file_count" to javaFileCount
-                )
+                    "java_file_count" to javaFileCount,
+                ),
         )
 
         val buildStatus =
@@ -86,7 +89,8 @@ class CheckoutValidator(
         CheckoutDirectoryPolicy.validate(checkoutDirectory.toString().replace('\\', '/'))
         if (checkoutDirectory.exists()) {
             Files.walk(checkoutDirectory).use { stream ->
-                stream.asSequence()
+                stream
+                    .asSequence()
                     .sortedByDescending { it.nameCount }
                     .forEach { Files.deleteIfExists(it) }
             }
@@ -97,7 +101,10 @@ class CheckoutValidator(
     /**
      * Runs benchmark build commands and returns pass/fail status without throwing.
      */
-    private fun runBuildCommands(config: BenchmarkConfig, checkoutDirectory: Path): BuildStatus {
+    private fun runBuildCommands(
+        config: BenchmarkConfig,
+        checkoutDirectory: Path,
+    ): BuildStatus {
         return try {
             val buildWorkingDirectory = resolveBuildWorkingDirectory(checkoutDirectory, config.build.workingDirectory)
             if (!buildWorkingDirectory.isDirectory()) {
@@ -105,8 +112,8 @@ class CheckoutValidator(
                     "benchmark_build_failed",
                     mapOf(
                         "reason" to "working directory does not exist",
-                        "working_directory" to buildWorkingDirectory.toString()
-                    )
+                        "working_directory" to buildWorkingDirectory.toString(),
+                    ),
                 )
                 return BuildStatus.FAILED
             }
@@ -114,17 +121,17 @@ class CheckoutValidator(
             config.build.commands.forEach { command ->
                 logger.info(
                     "benchmark_build_command_start",
-                    mapOf("cwd" to buildWorkingDirectory.toString(), "command" to command)
+                    mapOf("cwd" to buildWorkingDirectory.toString(), "command" to command),
                 )
                 val result = processExecutor.runShell(command, buildWorkingDirectory)
                 logger.info(
                     "benchmark_build_command_finish",
-                    mapOf("cwd" to buildWorkingDirectory.toString(), "command" to command, "exit_code" to result.exitCode)
+                    mapOf("cwd" to buildWorkingDirectory.toString(), "command" to command, "exit_code" to result.exitCode),
                 )
                 if (result.exitCode != 0) {
                     logger.error(
                         "benchmark_build_failed",
-                        mapOf("command" to command, "exit_code" to result.exitCode, "output" to result.output)
+                        mapOf("command" to command, "exit_code" to result.exitCode, "output" to result.output),
                     )
                     return BuildStatus.FAILED
                 }
@@ -139,7 +146,10 @@ class CheckoutValidator(
     /**
      * Resolves and validates the configured build working directory under the checkout root.
      */
-    private fun resolveBuildWorkingDirectory(checkoutDirectory: Path, configuredPath: String): Path {
+    private fun resolveBuildWorkingDirectory(
+        checkoutDirectory: Path,
+        configuredPath: String,
+    ): Path {
         val relativePath = Paths.get(configuredPath)
         if (relativePath.isAbsolute) {
             throw CheckoutException("build.workingDirectory must be a relative path: $configuredPath")
@@ -154,7 +164,10 @@ class CheckoutValidator(
     /**
      * Throws a validation error when a required process command fails.
      */
-    private fun runRequired(result: CommandResult, failureMessage: String) {
+    private fun runRequired(
+        result: CommandResult,
+        failureMessage: String,
+    ) {
         if (result.exitCode != 0) {
             throw CheckoutException("$failureMessage (exit=${result.exitCode}): ${result.output}")
         }

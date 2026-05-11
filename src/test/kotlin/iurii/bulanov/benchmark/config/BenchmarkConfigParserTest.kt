@@ -38,28 +38,29 @@ class BenchmarkConfigParserTest {
 
     @Test
     fun `missing required field fails clearly`() {
-        val configPath = writeTempConfig(
-            """
-            name: Missing ID
-            role: primary
-            description: test
-            repository:
-              upstream: https://example.com/upstream
-              source: https://example.com/source
-              ref: abcdef
-              branch: main
-            checkout:
-              directory: build/benchmarks/missing-id/source
-            java:
-              sourceRoots:
-                - src/main/java
-            build:
-              tool: maven
-              workingDirectory: .
-              commands:
-                - mvn -q -DskipTests package
-            """.trimIndent()
-        )
+        val configPath =
+            writeTempConfig(
+                """
+                name: Missing ID
+                role: primary
+                description: test
+                repository:
+                  upstream: https://example.com/upstream
+                  source: https://example.com/source
+                  ref: abcdef
+                  branch: main
+                checkout:
+                  directory: build/benchmarks/missing-id/source
+                java:
+                  sourceRoots:
+                    - src/main/java
+                build:
+                  tool: maven
+                  workingDirectory: .
+                  commands:
+                    - mvn -q -DskipTests package
+                """.trimIndent(),
+            )
 
         val exception =
             assertFailsWith<CheckoutException> {
@@ -71,28 +72,29 @@ class BenchmarkConfigParserTest {
 
     @Test
     fun `empty java source roots fails`() {
-        val configPath = writeTempConfig(
-            """
-            id: test
-            name: Test
-            role: primary
-            description: test
-            repository:
-              upstream: https://example.com/upstream
-              source: https://example.com/source
-              ref: abcdef
-              branch: main
-            checkout:
-              directory: build/benchmarks/test/source
-            java:
-              sourceRoots: []
-            build:
-              tool: maven
-              workingDirectory: .
-              commands:
-                - mvn -q -DskipTests package
-            """.trimIndent()
-        )
+        val configPath =
+            writeTempConfig(
+                """
+                id: test
+                name: Test
+                role: primary
+                description: test
+                repository:
+                  upstream: https://example.com/upstream
+                  source: https://example.com/source
+                  ref: abcdef
+                  branch: main
+                checkout:
+                  directory: build/benchmarks/test/source
+                java:
+                  sourceRoots: []
+                build:
+                  tool: maven
+                  workingDirectory: .
+                  commands:
+                    - mvn -q -DskipTests package
+                """.trimIndent(),
+            )
 
         val exception =
             assertFailsWith<CheckoutException> {
@@ -104,28 +106,29 @@ class BenchmarkConfigParserTest {
 
     @Test
     fun `empty build commands fails`() {
-        val configPath = writeTempConfig(
-            """
-            id: test
-            name: Test
-            role: primary
-            description: test
-            repository:
-              upstream: https://example.com/upstream
-              source: https://example.com/source
-              ref: abcdef
-              branch: main
-            checkout:
-              directory: build/benchmarks/test/source
-            java:
-              sourceRoots:
-                - src/main/java
-            build:
-              tool: maven
-              workingDirectory: .
-              commands: []
-            """.trimIndent()
-        )
+        val configPath =
+            writeTempConfig(
+                """
+                id: test
+                name: Test
+                role: primary
+                description: test
+                repository:
+                  upstream: https://example.com/upstream
+                  source: https://example.com/source
+                  ref: abcdef
+                  branch: main
+                checkout:
+                  directory: build/benchmarks/test/source
+                java:
+                  sourceRoots:
+                    - src/main/java
+                build:
+                  tool: maven
+                  workingDirectory: .
+                  commands: []
+                """.trimIndent(),
+            )
 
         val exception =
             assertFailsWith<CheckoutException> {
@@ -141,7 +144,7 @@ class BenchmarkConfigParserTest {
             listOf(
                 "/tmp/hikaricp/source" to "checkout.directory must be a relative path",
                 "build/benchmarks/../hikaricp/source" to "checkout.directory must not contain '..'",
-                "tmp/benchmarks/hikaricp/source" to "checkout.directory must start with build/benchmarks/"
+                "tmp/benchmarks/hikaricp/source" to "checkout.directory must start with build/benchmarks/",
             )
 
         unsafeDirectories.forEach { (checkoutDirectory, expectedMessage) ->
