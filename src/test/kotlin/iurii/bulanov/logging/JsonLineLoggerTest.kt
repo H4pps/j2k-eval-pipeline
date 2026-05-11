@@ -11,17 +11,17 @@ class JsonLineLoggerTest {
         val logger =
             JsonLineLogger(
                 now = { Instant.parse("2026-05-11T07:15:30Z") },
-                writeLine = lines::add
+                writeLine = lines::add,
             )
 
         logger.info(
             event = "benchmark_checkout_started",
-            fields = linkedMapOf("config_path" to "benchmarks/hikaricp.yml", "run_build" to false)
+            fields = linkedMapOf("config_path" to "benchmarks/hikaricp.yml", "run_build" to false),
         )
 
         assertEquals(
             """{"timestamp":"2026-05-11T07:15:30Z", "level":"INFO", "event":"benchmark_checkout_started", "config_path":"benchmarks/hikaricp.yml", "run_build":false}""",
-            lines.single()
+            lines.single(),
         )
     }
 
@@ -31,14 +31,14 @@ class JsonLineLoggerTest {
         val logger =
             JsonLineLogger(
                 now = { Instant.parse("2026-05-11T07:15:31Z") },
-                writeLine = lines::add
+                writeLine = lines::add,
             )
 
         logger.error("benchmark_checkout_failed")
 
         assertEquals(
             """{"timestamp":"2026-05-11T07:15:31Z", "level":"ERROR", "event":"benchmark_checkout_failed"}""",
-            lines.single()
+            lines.single(),
         )
     }
 }

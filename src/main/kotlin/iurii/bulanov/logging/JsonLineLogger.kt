@@ -10,31 +10,42 @@ import java.time.Instant
  */
 class JsonLineLogger(
     private val now: () -> Instant = Instant::now,
-    private val writeLine: (String) -> Unit = ::println
+    private val writeLine: (String) -> Unit = ::println,
 ) : StructuredLogger {
     /**
      * Writes an info-level JSON log line with an event name and optional fields.
      */
-    override fun info(event: String, fields: Map<String, Any?>) {
+    override fun info(
+        event: String,
+        fields: Map<String, Any?>,
+    ) {
         log("INFO", event, fields)
     }
 
     /**
      * Writes an error-level JSON log line with an event name and optional fields.
      */
-    override fun error(event: String, fields: Map<String, Any?>) {
+    override fun error(
+        event: String,
+        fields: Map<String, Any?>,
+    ) {
         log("ERROR", event, fields)
     }
 
     /**
      * Writes a JSON log line to stdout.
      */
-    private fun log(level: String, event: String, fields: Map<String, Any?>) {
-        val payload = linkedMapOf<String, Any?>(
-            "timestamp" to now().toString(),
-            "level" to level,
-            "event" to event
-        )
+    private fun log(
+        level: String,
+        event: String,
+        fields: Map<String, Any?>,
+    ) {
+        val payload =
+            linkedMapOf<String, Any?>(
+                "timestamp" to now().toString(),
+                "level" to level,
+                "event" to event,
+            )
         payload.putAll(fields)
         writeLine(JsonEncoder.encode(payload))
     }

@@ -1,17 +1,24 @@
 package iurii.bulanov
 
 import iurii.bulanov.benchmark.checkout.BenchmarkCheckoutRunner
-import iurii.bulanov.cli.BenchmarkCheckoutCli
+import iurii.bulanov.cli.J2kEvalCliApplication
+import iurii.bulanov.evaluation.EvaluatorRunner
 import iurii.bulanov.logging.JsonLineLogger
 import kotlin.system.exitProcess
 
 /**
- * Entry point for benchmark checkout CLI commands.
+ * Entry point for J2K evaluation harness CLI commands.
  */
 fun main(args: Array<String>) {
     val logger = JsonLineLogger()
-    val runner = BenchmarkCheckoutRunner(logger = logger)
-    val exitCode = BenchmarkCheckoutCli(logger = logger, runner = runner).run(args.toList())
+    val checkoutRunner = BenchmarkCheckoutRunner(logger = logger)
+    val evaluatorRunner = EvaluatorRunner(logger = logger)
+    val exitCode =
+        J2kEvalCliApplication(
+            logger = logger,
+            checkoutRunner = checkoutRunner,
+            evaluatorRunner = evaluatorRunner,
+        ).run(args.toList())
     if (exitCode != 0) {
         exitProcess(exitCode)
     }
