@@ -2,11 +2,11 @@ package iurii.bulanov.benchmark.checkout
 
 import iurii.bulanov.benchmark.config.BenchmarkConfig
 import iurii.bulanov.benchmark.config.CheckoutDirectoryPolicy
-import iurii.bulanov.benchmark.discovery.SourceFileDiscovery
 import iurii.bulanov.logging.JsonLineLogger
 import iurii.bulanov.logging.StructuredLogger
 import iurii.bulanov.process.CommandResult
 import iurii.bulanov.process.ProcessExecutor
+import iurii.bulanov.source.SourceFileDiscovery
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
