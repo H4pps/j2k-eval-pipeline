@@ -11,23 +11,26 @@ import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
 import iurii.bulanov.benchmark.checkout.BenchmarkCheckoutRunner
 import iurii.bulanov.benchmark.checkout.CheckoutBenchmarkRequest
+import iurii.bulanov.benchmark.evaluation.EvaluationRequest
+import iurii.bulanov.benchmark.evaluation.EvaluatorRunner
 import iurii.bulanov.logging.JsonLineLogger
 import iurii.bulanov.logging.StructuredLogger
 
 /**
- * CLI entrypoint facade that delegates argument parsing to Clikt.
+ * CLI entrypoint facade for all J2K evaluation harness commands.
  *
  * Structured logging is emitted through an injected [logger].
  */
-class BenchmarkCheckoutCli(
+class J2kEvalCliApplication(
     private val logger: StructuredLogger = JsonLineLogger(),
-    private val runner: BenchmarkCheckoutRunner = BenchmarkCheckoutRunner(logger = logger)
+    private val checkoutRunner: BenchmarkCheckoutRunner = BenchmarkCheckoutRunner(logger = logger),
+    private val evaluatorRunner: EvaluatorRunner = EvaluatorRunner(logger = logger),
 ) {
     /**
      * Parses [args], executes the selected command, and returns a process-style exit code.
      */
     fun run(args: List<String>): Int {
-        val command = J2kEvalCli(runner)
+        val command = J2kEvalCli(checkoutRunner = checkoutRunner, evaluatorRunner = evaluatorRunner)
         return try {
             command.parse(args)
             0
@@ -38,8 +41,8 @@ class BenchmarkCheckoutCli(
             error.statusCode
         } catch (exception: Exception) {
             logger.error(
-                "benchmark_checkout_failed",
-                mapOf("error" to (exception.message ?: exception::class.simpleName))
+                "j2k_eval_cli_failed",
+                mapOf("error" to (exception.message ?: exception::class.simpleName)),
             )
             1
         }
@@ -50,10 +53,14 @@ class BenchmarkCheckoutCli(
  * Root Clikt command for the J2K evaluation harness CLI.
  */
 class J2kEvalCli(
-    private val runner: BenchmarkCheckoutRunner = BenchmarkCheckoutRunner()
+    private val checkoutRunner: BenchmarkCheckoutRunner = BenchmarkCheckoutRunner(),
+    private val evaluatorRunner: EvaluatorRunner = EvaluatorRunner(),
 ) : CliktCommand(name = "j2k-eval") {
     init {
-        subcommands(CheckoutBenchmarkCliktCommand(runner))
+        subcommands(
+            CheckoutBenchmarkCliktCommand(checkoutRunner),
+            EvaluateCliktCommand(evaluatorRunner),
+        )
     }
 
     /**
@@ -66,7 +73,7 @@ class J2kEvalCli(
  * Clikt subcommand that validates benchmark checkout inputs and runtime sanity checks.
  */
 private class CheckoutBenchmarkCliktCommand(
-    private val runner: BenchmarkCheckoutRunner
+    private val runner: BenchmarkCheckoutRunner,
 ) : CliktCommand(name = "checkout-benchmark") {
     private val configPath by option("--config", help = "Path to benchmark YAML config").path().required()
     private val runBuild by option("--run-build", help = "Run configured benchmark build commands").flag(default = false)
@@ -83,8 +90,36 @@ private class CheckoutBenchmarkCliktCommand(
                     configPath = configPath,
                     runBuild = runBuild,
                     githubSummaryPath = githubSummaryPath,
-                    githubOutputPath = githubOutputPath
-                )
+                    githubOutputPath = githubOutputPath,
+                ),
+            )
+        if (exitCode != 0) {
+            throw ProgramResult(exitCode)
+        }
+    }
+}
+
+/**
+ * Clikt subcommand that runs the Kotlin evaluator skeleton.
+ */
+private class EvaluateCliktCommand(
+    private val runner: EvaluatorRunner,
+) : CliktCommand(name = "evaluate") {
+    private val configPath by option("--config", help = "Path to benchmark YAML config").path().required()
+    private val generatedKotlinPath by option("--generated-kotlin", help = "Generated Kotlin output directory").path()
+    private val reportDirectoryPath by option("--report-dir", help = "Evaluator report output directory").path()
+
+    /**
+     * Executes evaluator discovery and placeholder report generation through [EvaluatorRunner].
+     */
+    override fun run() {
+        val exitCode =
+            runner.run(
+                EvaluationRequest(
+                    configPath = configPath,
+                    generatedKotlinDirectory = generatedKotlinPath,
+                    reportDirectory = reportDirectoryPath,
+                ),
             )
         if (exitCode != 0) {
             throw ProgramResult(exitCode)
