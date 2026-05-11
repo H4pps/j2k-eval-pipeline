@@ -1,8 +1,8 @@
 package iurii.bulanov
 
 import iurii.bulanov.benchmark.checkout.BenchmarkCheckoutRunner
+import iurii.bulanov.benchmark.evaluation.EvaluatorRunner
 import iurii.bulanov.cli.J2kEvalCliApplication
-import iurii.bulanov.evaluation.EvaluatorRunner
 import iurii.bulanov.logging.JsonLineLogger
 import kotlin.system.exitProcess
 
