@@ -1,0 +1,23 @@
+id: spring-petclinic
+name: Spring PetClinic
+role: calibration
+description: Optional Spring Boot calibration benchmark for comparing converter behavior.
+
+repository:
+  upstream: https://github.com/spring-projects/spring-petclinic
+  source: https://github.com/H4pps/spring-petclinic
+  ref: c7ee170434ec3e369fdc9201290ba2ea4c92b557
+  branch: main
+
+checkout:
+  directory: build/benchmarks/spring-petclinic/source
+
+java:
+  sourceRoots:
+    - src/main/java
+
+build:
+  tool: maven-wrapper
+  workingDirectory: .
+  commands:
+    - ./mvnw -q -DskipTests package

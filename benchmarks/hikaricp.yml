@@ -1,0 +1,23 @@
+id: hikaricp
+name: HikariCP
+role: primary
+description: Primary real-world Java benchmark for static J2K conversion.
+
+repository:
+  upstream: https://github.com/brettwooldridge/HikariCP
+  source: https://github.com/H4pps/HikariCP
+  ref: bba167f0a28905e8e63083cd7b5cbf479263271a
+  branch: dev
+
+checkout:
+  directory: build/benchmarks/hikaricp/source
+
+java:
+  sourceRoots:
+    - src/main/java
+
+build:
+  tool: maven
+  workingDirectory: .
+  commands:
+    - mvn -q -DskipTests package
