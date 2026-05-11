@@ -1,0 +1,27 @@
+# Project-scoped Codex configuration.
+# Codex loads this file only when the project is trusted. User config, profiles,
+# and CLI flags still take precedence over these defaults.
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+web_search = "cached"
+model = "gpt-5.5"
+model_reasoning_effort = "medium"
+
+project_root_markers = [
+  ".git",
+  "settings.gradle.kts",
+  "build.gradle.kts",
+  "AGENTS.md",
+]
+project_doc_max_bytes = 30000
+project_doc_fallback_filenames = ["AGENTS.md", "README.md"]
+
+[sandbox_workspace_write]
+network_access = true
+exclude_slash_tmp = false
+exclude_tmpdir_env_var = false
+
+[agents]
+max_threads = 4
+max_depth = 1

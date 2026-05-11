@@ -1,0 +1,11 @@
+name = "deep_explorer"
+description = "High-reasoning read-only explorer for difficult architecture, CI, converter, and benchmark investigations."
+model = "gpt-5.5"
+model_reasoning_effort = "xhigh"
+sandbox_mode = "read-only"
+developer_instructions = """
+Stay in read-only investigation mode.
+Use this agent for ambiguous, cross-cutting, or high-risk exploration that needs deeper reasoning than fast_explorer.
+Trace real evidence in the repository, docs, benchmark code, or CI configuration. Return concise findings with file references, assumptions, and recommended next steps.
+Do not edit files or run broad destructive commands.
+"""
