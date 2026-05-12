@@ -51,6 +51,10 @@ class EvaluationReportWriterTest {
         assertContains(summary, "Kotlin-only API names: `1`")
         assertContains(summary, "`MissingClass`")
         assertContains(summary, "`newHelper`")
+        assertContains(summary, "#### Classes and records")
+        assertContains(summary, "Java classes/records missing in Kotlin")
+        assertContains(summary, "#### Methods and functions")
+        assertContains(summary, "Kotlin functions not present as Java methods")
         assertContains(summary, "Missing generated Kotlin files: `1`")
         assertContains(summary, "`App.kt`")
         assertContains(summary, "`generated_kotlin_directory_missing`")
@@ -143,6 +147,7 @@ class EvaluationReportWriterTest {
                     publicApiNameOverlapCount = 1,
                     missingPublicApiNames = emptyList(),
                     kotlinOnlyPublicApiNames = emptyList(),
+                    nameDiffs = emptyNameDiffs(),
                 ),
             quality = emptyQuality(),
             status = EvaluationStatus.COMPLETED,
@@ -219,6 +224,26 @@ class EvaluationReportWriterTest {
             publicApiNameOverlapCount = 0,
             missingPublicApiNames = listOf("App", "MissingClass"),
             kotlinOnlyPublicApiNames = listOf("newHelper"),
+            nameDiffs =
+                StructuralNameDiffs(
+                    classLike = StructuralNameDiff(missingInKotlin = listOf("MissingClass"), kotlinOnly = emptyList()),
+                    interfaces = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
+                    enums = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
+                    objects = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
+                    functions = StructuralNameDiff(missingInKotlin = listOf("App"), kotlinOnly = listOf("newHelper")),
+                ),
+        )
+
+    /**
+     * Builds empty grouped structural name diffs.
+     */
+    private fun emptyNameDiffs(): StructuralNameDiffs =
+        StructuralNameDiffs(
+            classLike = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
+            interfaces = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
+            enums = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
+            objects = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
+            functions = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
         )
 
     /**

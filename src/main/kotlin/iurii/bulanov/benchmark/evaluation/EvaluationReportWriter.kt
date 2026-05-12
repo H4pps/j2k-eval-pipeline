@@ -173,8 +173,30 @@ class EvaluationReportWriter(
         appendLine("- Public API name overlap: `${structure.publicApiNameOverlapCount}`")
         appendLine("- Java API names missing in Kotlin: `${structure.missingPublicApiNames.size}`")
         appendLine("- Kotlin-only API names: `${structure.kotlinOnlyPublicApiNames.size}`")
-        appendNameList("Java API names missing in Kotlin", structure.missingPublicApiNames)
-        appendNameList("Kotlin-only API names", structure.kotlinOnlyPublicApiNames)
+        appendLine()
+        appendLine("### Structural Name Differences")
+        appendLine()
+        appendLine("These name lists are heuristic; Java getters may become Kotlin properties.")
+        appendNameDiff(
+            "Classes and records",
+            "Java classes/records missing in Kotlin",
+            "Kotlin classes not present in Java",
+            structure.nameDiffs.classLike,
+        )
+        appendNameDiff(
+            "Interfaces",
+            "Java interfaces missing in Kotlin",
+            "Kotlin interfaces not present in Java",
+            structure.nameDiffs.interfaces,
+        )
+        appendNameDiff("Enums", "Java enums missing in Kotlin", "Kotlin enums not present in Java", structure.nameDiffs.enums)
+        appendNameList("Kotlin objects not present in Java", structure.nameDiffs.objects.kotlinOnly)
+        appendNameDiff(
+            "Methods and functions",
+            "Java methods missing as Kotlin functions",
+            "Kotlin functions not present as Java methods",
+            structure.nameDiffs.functions,
+        )
     }
 
     /**
@@ -281,6 +303,21 @@ class EvaluationReportWriter(
             }
         appendLine("- $title ($suffix):")
         displayedNames.forEach { name -> appendLine("  - `$name`") }
+    }
+
+    /**
+     * Appends one grouped two-way structural name diff.
+     */
+    private fun StringBuilder.appendNameDiff(
+        title: String,
+        missingInKotlinTitle: String,
+        kotlinOnlyTitle: String,
+        diff: StructuralNameDiff,
+    ) {
+        appendLine()
+        appendLine("#### $title")
+        appendNameList(missingInKotlinTitle, diff.missingInKotlin)
+        appendNameList(kotlinOnlyTitle, diff.kotlinOnly)
     }
 
     /**
@@ -428,6 +465,28 @@ class EvaluationReportWriter(
             "public_api_name_overlap_count" to metrics.publicApiNameOverlapCount,
             "missing_public_api_names" to metrics.missingPublicApiNames,
             "kotlin_only_public_api_names" to metrics.kotlinOnlyPublicApiNames,
+            "name_diffs" to nameDiffsJson(metrics.nameDiffs),
+        )
+
+    /**
+     * Renders grouped structural name diffs to a JSON-compatible map.
+     */
+    private fun nameDiffsJson(nameDiffs: StructuralNameDiffs): Map<String, Any?> =
+        linkedMapOf(
+            "class_like" to nameDiffJson(nameDiffs.classLike),
+            "interfaces" to nameDiffJson(nameDiffs.interfaces),
+            "enums" to nameDiffJson(nameDiffs.enums),
+            "objects" to nameDiffJson(nameDiffs.objects),
+            "functions" to nameDiffJson(nameDiffs.functions),
+        )
+
+    /**
+     * Renders one structural name diff to a JSON-compatible map.
+     */
+    private fun nameDiffJson(diff: StructuralNameDiff): Map<String, Any?> =
+        linkedMapOf(
+            "missing_in_kotlin" to diff.missingInKotlin,
+            "kotlin_only" to diff.kotlinOnly,
         )
 
     /**

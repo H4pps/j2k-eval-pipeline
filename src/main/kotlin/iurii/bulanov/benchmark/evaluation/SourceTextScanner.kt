@@ -23,6 +23,10 @@ class SourceTextScanner {
             interfaceCount = declarations.count { it.second == "interface" },
             enumCount = declarations.count { it.second == "enum" },
             objectCount = 0,
+            classLikeNames = declarations.namesForKinds("class", "record"),
+            interfaceNames = declarations.namesForKinds("interface"),
+            enumNames = declarations.namesForKinds("enum"),
+            objectNames = emptySet(),
             topLevelNames = declarationNames,
             functionNames = methodNames,
             publicApiNames = declarationNames + methodNames,
@@ -43,6 +47,10 @@ class SourceTextScanner {
             interfaceCount = declarations.count { it.second == "interface" },
             enumCount = declarations.count { it.second == "enum class" },
             objectCount = declarations.count { it.second == "object" },
+            classLikeNames = declarations.namesForKinds(*KOTLIN_CLASS_DECLARATIONS.toTypedArray()),
+            interfaceNames = declarations.namesForKinds("interface"),
+            enumNames = declarations.namesForKinds("enum class"),
+            objectNames = declarations.namesForKinds("object"),
             topLevelNames = declarationNames,
             functionNames = functionNames,
             publicApiNames = declarationNames + functionNames,
@@ -178,6 +186,14 @@ class SourceTextScanner {
     ): String? = regex.find(source)?.groupValues?.get(1)
 
     /**
+     * Extracts declaration names whose declaration kind is in [kinds].
+     */
+    private fun List<Pair<String, String>>.namesForKinds(vararg kinds: String): Set<String> {
+        val expectedKinds = kinds.toSet()
+        return filter { it.second in expectedKinds }.map { it.first }.toSet()
+    }
+
+    /**
      * Consumes a line comment while preserving line boundaries.
      */
     private fun consumeLineComment(
@@ -281,6 +297,10 @@ data class SourceStructure(
     val interfaceCount: Int,
     val enumCount: Int,
     val objectCount: Int,
+    val classLikeNames: Set<String>,
+    val interfaceNames: Set<String>,
+    val enumNames: Set<String>,
+    val objectNames: Set<String>,
     val topLevelNames: Set<String>,
     val functionNames: Set<String>,
     val publicApiNames: Set<String>,

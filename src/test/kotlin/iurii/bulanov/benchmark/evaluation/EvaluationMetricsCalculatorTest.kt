@@ -52,6 +52,8 @@ class EvaluationMetricsCalculatorTest {
         assertTrue(metrics.structure.kotlinTopLevelDeclarationCount >= 1)
         assertContains(metrics.structure.missingPublicApiNames, "Missing")
         assertContains(metrics.structure.kotlinOnlyPublicApiNames, "newHelper")
+        assertContains(metrics.structure.nameDiffs.classLike.missingInKotlin, "Missing")
+        assertContains(metrics.structure.nameDiffs.functions.kotlinOnly, "newHelper")
         assertEquals(1, metrics.quality.notNullAssertionCount)
         assertEquals(1, metrics.quality.notNullAssertionInCallCount)
         assertEquals(1, metrics.quality.anyNullableCount)

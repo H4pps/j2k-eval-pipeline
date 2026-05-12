@@ -136,6 +136,26 @@ data class StructuralMetrics(
     val publicApiNameOverlapCount: Int,
     val missingPublicApiNames: List<String>,
     val kotlinOnlyPublicApiNames: List<String>,
+    val nameDiffs: StructuralNameDiffs,
+)
+
+/**
+ * Grouped structural name differences between Java input and generated Kotlin output.
+ */
+data class StructuralNameDiffs(
+    val classLike: StructuralNameDiff,
+    val interfaces: StructuralNameDiff,
+    val enums: StructuralNameDiff,
+    val objects: StructuralNameDiff,
+    val functions: StructuralNameDiff,
+)
+
+/**
+ * One structural-name diff category.
+ */
+data class StructuralNameDiff(
+    val missingInKotlin: List<String>,
+    val kotlinOnly: List<String>,
 )
 
 /**

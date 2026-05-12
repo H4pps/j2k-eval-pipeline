@@ -29,6 +29,7 @@ class SourceTextScannerTest {
                 }
                 interface Named
                 enum class Mode { ON }
+                object Singleton
                 """.trimIndent(),
             )
 
@@ -36,11 +37,19 @@ class SourceTextScannerTest {
         assertEquals(1, java.classLikeCount)
         assertEquals(1, java.interfaceCount)
         assertEquals(1, java.enumCount)
+        assertTrue("App" in java.classLikeNames)
+        assertTrue("Named" in java.interfaceNames)
+        assertTrue("Mode" in java.enumNames)
         assertTrue("App" in java.publicApiNames)
         assertEquals("com.example", kotlin.packageName)
         assertEquals(1, kotlin.classLikeCount)
         assertEquals(1, kotlin.interfaceCount)
         assertEquals(1, kotlin.enumCount)
+        assertEquals(1, kotlin.objectCount)
+        assertTrue("App" in kotlin.classLikeNames)
+        assertTrue("Named" in kotlin.interfaceNames)
+        assertTrue("Mode" in kotlin.enumNames)
+        assertTrue("Singleton" in kotlin.objectNames)
         assertTrue("name" in kotlin.publicApiNames)
     }
 

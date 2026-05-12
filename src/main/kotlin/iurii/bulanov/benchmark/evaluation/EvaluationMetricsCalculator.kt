@@ -157,6 +157,57 @@ class EvaluationMetricsCalculator(
             publicApiNameOverlapCount = javaApiNames.intersect(kotlinApiNames).size,
             missingPublicApiNames = javaApiNames.minus(kotlinApiNames).sorted(),
             kotlinOnlyPublicApiNames = kotlinApiNames.minus(javaApiNames).sorted(),
+            nameDiffs = structuralNameDiffs(javaStructures, kotlinStructures),
+        )
+    }
+
+    /**
+     * Calculates structural name differences grouped by declaration/member kind.
+     */
+    private fun structuralNameDiffs(
+        javaStructures: List<SourceStructure>,
+        kotlinStructures: List<SourceStructure>,
+    ): StructuralNameDiffs =
+        StructuralNameDiffs(
+            classLike =
+                nameDiff(
+                    javaStructures.flatMap { it.classLikeNames },
+                    kotlinStructures.flatMap { it.classLikeNames },
+                ),
+            interfaces =
+                nameDiff(
+                    javaStructures.flatMap { it.interfaceNames },
+                    kotlinStructures.flatMap { it.interfaceNames },
+                ),
+            enums =
+                nameDiff(
+                    javaStructures.flatMap { it.enumNames },
+                    kotlinStructures.flatMap { it.enumNames },
+                ),
+            objects =
+                nameDiff(
+                    emptyList(),
+                    kotlinStructures.flatMap { it.objectNames },
+                ),
+            functions =
+                nameDiff(
+                    javaStructures.flatMap { it.functionNames },
+                    kotlinStructures.flatMap { it.functionNames },
+                ),
+        )
+
+    /**
+     * Builds a deterministic two-way name diff.
+     */
+    private fun nameDiff(
+        javaNames: List<String>,
+        kotlinNames: List<String>,
+    ): StructuralNameDiff {
+        val javaSet = javaNames.toSet()
+        val kotlinSet = kotlinNames.toSet()
+        return StructuralNameDiff(
+            missingInKotlin = javaSet.minus(kotlinSet).sorted(),
+            kotlinOnly = kotlinSet.minus(javaSet).sorted(),
         )
     }
 
