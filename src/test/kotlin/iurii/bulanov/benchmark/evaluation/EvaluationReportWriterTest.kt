@@ -13,11 +13,12 @@ import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class EvaluationReportWriterTest {
     @Test
-    fun `writes deterministic json and markdown reports`() {
+    fun `writes assignment aligned json and markdown for partial conversions`() {
         val reportDirectory = Files.createTempDirectory("evaluation-report-")
 
         EvaluationReportWriter(logger = NoopLogger).write(sampleResult(reportDirectory))
@@ -32,10 +33,36 @@ class EvaluationReportWriterTest {
         assertContains(jsonPath.readText(), "\"conversion\"")
         assertContains(jsonPath.readText(), "\"file_coverage\"")
         assertContains(jsonPath.readText(), "\"quality\"")
-        assertContains(summaryPath.readText(), "## Conversion Execution")
-        assertContains(summaryPath.readText(), "## Kotlin Quality Warnings")
-        assertContains(summaryPath.readText(), "Java files discovered: `1`")
-        assertContains(summaryPath.readText(), "`generated_kotlin_directory_missing`")
+        assertContains(jsonPath.readText(), "\"analysis\"")
+        assertContains(jsonPath.readText(), "\"analysis_method\":\"structural_heuristics\"")
+        assertContains(jsonPath.readText(), "\"missing_output_count\":1")
+        assertContains(jsonPath.readText(), "\"quality_warning_count\":1")
+
+        val summary = summaryPath.readText()
+        assertContains(summary, "## Assignment Fit")
+        assertContains(summary, "## Result Interpretation")
+        assertContains(summary, "## Conversion Execution")
+        assertContains(summary, "## Kotlin Quality Warnings")
+        assertContains(summary, "Static J2K produced a partial conversion")
+        assertContains(summary, "Java files discovered: `1`")
+        assertContains(summary, "This section is the assignment's comparative analysis")
+        assertContains(summary, "Missing generated Kotlin files: `1`")
+        assertContains(summary, "`App.kt`")
+        assertContains(summary, "`generated_kotlin_directory_missing`")
+    }
+
+    @Test
+    fun `writes assignment aligned markdown for complete conversions`() {
+        val reportDirectory = Files.createTempDirectory("evaluation-report-complete-")
+
+        EvaluationReportWriter(logger = NoopLogger).write(completeResult(reportDirectory))
+
+        val summary = reportDirectory.resolve("summary.md").readText()
+        assertContains(summary, "Static J2K generated Kotlin for every configured Java input")
+        assertContains(summary, "Coverage: `1` of `1` configured Java inputs")
+        assertContains(summary, "## Notable Failures")
+        assertContains(summary, "- None")
+        assertFalse(summary.contains("Missing generated Kotlin files"))
     }
 
     /**
@@ -61,6 +88,62 @@ class EvaluationReportWriterTest {
         )
 
     /**
+     * Builds a completed evaluation result for report rendering tests.
+     */
+    private fun completeResult(reportDirectory: Path): EvaluationResult =
+        EvaluationResult(
+            config = testConfig("complete"),
+            checkoutDirectory = Path.of("build/benchmarks/complete/source"),
+            generatedKotlinDirectory = Path.of("build/j2k/complete/generated-kotlin"),
+            reportDirectory = reportDirectory,
+            conversionReportPath = Path.of("build/j2k/complete/conversion.json"),
+            checkoutReportPath = Path.of("build/benchmarks/complete/checkout.json"),
+            javaFiles = sampleJavaFiles(),
+            kotlinFiles = sampleKotlinFiles(),
+            checkout = CheckoutEvaluation(available = true, buildStatus = "skipped", javaFileCount = 1, runBuild = false),
+            conversion =
+                ConversionEvaluation(
+                    available = true,
+                    status = "completed",
+                    sourceJavaFileCount = 1,
+                    generatedKotlinFileCount = 1,
+                    warningCount = 0,
+                    errorCount = 0,
+                    warnings = emptyList(),
+                    errors = emptyList(),
+                ),
+            fileCoverage =
+                FileCoverageMetrics(
+                    javaFileCount = 1,
+                    kotlinFileCount = 1,
+                    matchedKotlinFileCount = 1,
+                    missingKotlinFiles = emptyList(),
+                    unexpectedKotlinFiles = emptyList(),
+                    emptyGeneratedFiles = emptyList(),
+                    packagePreservedCount = 1,
+                    packageMismatchFiles = emptyList(),
+                ),
+            structure =
+                StructuralMetrics(
+                    javaTopLevelDeclarationCount = 1,
+                    kotlinTopLevelDeclarationCount = 1,
+                    javaClassLikeCount = 1,
+                    kotlinClassLikeCount = 1,
+                    javaInterfaceCount = 0,
+                    kotlinInterfaceCount = 0,
+                    javaEnumCount = 0,
+                    kotlinEnumCount = 0,
+                    javaMethodCount = 1,
+                    kotlinFunctionCount = 1,
+                    publicApiNameOverlapCount = 1,
+                    missingPublicApiNames = emptyList(),
+                ),
+            quality = emptyQuality(),
+            status = EvaluationStatus.COMPLETED,
+            warnings = emptyList(),
+        )
+
+    /**
      * Builds a discovered Java input fixture.
      */
     private fun sampleJavaFiles(): List<DiscoveredSourceFile> =
@@ -68,6 +151,17 @@ class EvaluationReportWriterTest {
             DiscoveredSourceFile(
                 absolutePath = Path.of("build/benchmarks/sample/source/src/main/java/App.java"),
                 relativePath = Path.of("src/main/java/App.java"),
+            ),
+        )
+
+    /**
+     * Builds a discovered Kotlin output fixture.
+     */
+    private fun sampleKotlinFiles(): List<DiscoveredSourceFile> =
+        listOf(
+            DiscoveredSourceFile(
+                absolutePath = Path.of("build/j2k/sample/generated-kotlin/src/main/java/App.kt"),
+                relativePath = Path.of("src/main/java/App.kt"),
             ),
         )
 
@@ -121,9 +215,34 @@ class EvaluationReportWriterTest {
         )
 
     /**
-     * Builds empty sample quality metrics.
+     * Builds sample quality metrics with one review finding.
      */
     private fun sampleQuality(): QualityMetrics =
+        QualityMetrics(
+            todoCount = 0,
+            notNullAssertionCount = 1,
+            notNullAssertionInCallCount = 0,
+            anyNullableCount = 0,
+            unresolvedImportCount = 0,
+            javaInteropReferenceCount = 0,
+            getterSetterCallCount = 0,
+            nullableBooleanComparisonCount = 0,
+            eagerPropertyInitializationCount = 0,
+            findings =
+                listOf(
+                    EvaluationWarning(
+                        code = "not_null_assertion",
+                        message = "Generated Kotlin contains not-null assertions.",
+                        path = "App.kt",
+                        count = 1,
+                    ),
+                ),
+        )
+
+    /**
+     * Builds empty quality metrics.
+     */
+    private fun emptyQuality(): QualityMetrics =
         QualityMetrics(
             todoCount = 0,
             notNullAssertionCount = 0,

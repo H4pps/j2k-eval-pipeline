@@ -36,62 +36,17 @@ class EvaluationReportWriter(
     fun renderJson(result: EvaluationResult): String =
         JsonEncoder.encode(
             linkedMapOf(
-                "benchmark" to
-                    linkedMapOf(
-                        "id" to result.config.id,
-                        "name" to result.config.name,
-                        "role" to result.config.role,
-                        "repository_source" to result.config.repository.source,
-                        "repository_upstream" to result.config.repository.upstream,
-                        "repository_ref" to result.config.repository.ref,
-                    ),
-                "paths" to
-                    linkedMapOf(
-                        "checkout_directory" to result.checkoutDirectory.toString(),
-                        "generated_kotlin_directory" to result.generatedKotlinDirectory.toString(),
-                        "conversion_report" to result.conversionReportPath.toString(),
-                        "checkout_report" to result.checkoutReportPath.toString(),
-                        "report_directory" to result.reportDirectory.toString(),
-                    ),
-                "checkout" to
-                    linkedMapOf(
-                        "available" to result.checkout.available,
-                        "benchmark_id" to result.checkout.benchmarkId,
-                        "build_status" to result.checkout.buildStatus,
-                        "java_file_count" to result.checkout.javaFileCount,
-                        "run_build" to result.checkout.runBuild,
-                    ),
-                "conversion" to
-                    linkedMapOf(
-                        "available" to result.conversion.available,
-                        "benchmark_id" to result.conversion.benchmarkId,
-                        "status" to result.conversion.status,
-                        "source_java_file_count" to result.conversion.sourceJavaFileCount,
-                        "generated_kotlin_file_count" to result.conversion.generatedKotlinFileCount,
-                        "warning_count" to result.conversion.warningCount,
-                        "error_count" to result.conversion.errorCount,
-                        "warnings" to result.conversion.warnings,
-                        "errors" to result.conversion.errors,
-                    ),
+                "benchmark" to benchmarkJson(result),
+                "paths" to pathsJson(result),
+                "checkout" to checkoutJson(result.checkout),
+                "conversion" to conversionJson(result.conversion),
                 "file_coverage" to fileCoverageJson(result.fileCoverage),
                 "structure" to structureJson(result.structure),
                 "quality" to qualityJson(result.quality),
-                "counts" to
-                    linkedMapOf(
-                        "java_file_count" to result.fileCoverage.javaFileCount,
-                        "kotlin_file_count" to result.fileCoverage.kotlinFileCount,
-                        "warning_count" to result.warnings.size,
-                    ),
+                "analysis" to assignmentAnalysisJson(result),
+                "counts" to countsJson(result),
                 "status" to result.status.name.lowercase(),
-                "warnings" to
-                    result.warnings.map { warning ->
-                        linkedMapOf(
-                            "code" to warning.code,
-                            "message" to warning.message,
-                            "path" to warning.path,
-                            "count" to warning.count,
-                        )
-                    },
+                "warnings" to warningsJson(result.warnings),
             ),
         ) + "\n"
 
@@ -102,13 +57,15 @@ class EvaluationReportWriter(
         buildString {
             appendLine("# J2K Evaluation Summary")
             appendBenchmark(result)
+            appendAssignmentFit(result)
+            appendResultInterpretation(result)
             appendPaths(result)
             appendConversion(result.conversion)
             appendCheckout(result.checkout)
             appendFileCoverage(result.fileCoverage)
             appendStructure(result.structure)
             appendQuality(result.quality)
-            appendNotableFailures(result.conversion.errors)
+            appendNotableFailures(result)
             appendWarnings(result)
         }
 
@@ -124,6 +81,42 @@ class EvaluationReportWriter(
         appendLine("- Role: `${result.config.role}`")
         appendLine("- Repository source: `${result.config.repository.source}`")
         appendLine("- Pinned ref: `${result.config.repository.ref}`")
+    }
+
+    /**
+     * Appends assignment-success framing to the Markdown summary.
+     */
+    private fun StringBuilder.appendAssignmentFit(result: EvaluationResult) {
+        appendLine()
+        appendLine("## Assignment Fit")
+        appendLine()
+        appendLine("- Static J2K pipeline: `${assignmentPipelineStatus(result.conversion)}`")
+        appendLine("- Evaluator implementation: `Kotlin-only evaluator`")
+        appendLine("- Benchmark role: `${benchmarkRoleDescription(result.config.role)}`")
+        appendLine("- Comparative method: `structural heuristics against the original Java sources`")
+    }
+
+    /**
+     * Appends a compact human verdict for the benchmark run.
+     */
+    private fun StringBuilder.appendResultInterpretation(result: EvaluationResult) {
+        appendLine()
+        appendLine("## Result Interpretation")
+        appendLine()
+        appendLine("- Verdict: ${resultVerdict(result)}")
+        appendLine(
+            "- Coverage: `${result.fileCoverage.matchedKotlinFileCount}` of `${result.fileCoverage.javaFileCount}` " +
+                "configured Java inputs have matching generated Kotlin files " +
+                "(`${formatPercent(result.fileCoverage.coveragePercent)}%`).",
+        )
+        appendLine(
+            "- Structural comparison: Java declarations/functions are compared with generated Kotlin " +
+                "declarations/functions as deterministic heuristics, not as a compiler proof.",
+        )
+        appendLine(
+            "- Quality review: `${result.quality.findings.size}` Kotlin quality warnings were produced for " +
+                "manual review.",
+        )
     }
 
     /**
@@ -191,8 +184,19 @@ class EvaluationReportWriter(
         appendLine()
         appendLine("## Structural Preservation")
         appendLine()
+        appendLine(
+            "This section is the assignment's comparative analysis: generated Kotlin is compared with " +
+                "the original Java source using deterministic structural heuristics.",
+        )
+        appendLine()
         appendLine("- Java declarations: `${structure.javaTopLevelDeclarationCount}`")
         appendLine("- Kotlin declarations: `${structure.kotlinTopLevelDeclarationCount}`")
+        appendLine("- Java class-like declarations: `${structure.javaClassLikeCount}`")
+        appendLine("- Kotlin class-like declarations: `${structure.kotlinClassLikeCount}`")
+        appendLine("- Java interfaces: `${structure.javaInterfaceCount}`")
+        appendLine("- Kotlin interfaces: `${structure.kotlinInterfaceCount}`")
+        appendLine("- Java enums: `${structure.javaEnumCount}`")
+        appendLine("- Kotlin enums: `${structure.kotlinEnumCount}`")
         appendLine("- Java methods: `${structure.javaMethodCount}`")
         appendLine("- Kotlin functions: `${structure.kotlinFunctionCount}`")
         appendLine("- Public API name overlap: `${structure.publicApiNameOverlapCount}`")
@@ -217,16 +221,40 @@ class EvaluationReportWriter(
     }
 
     /**
-     * Appends source-level conversion failures reported by J2K.
+     * Appends concrete conversion failures and review risks.
      */
-    private fun StringBuilder.appendNotableFailures(errors: List<String>) {
+    private fun StringBuilder.appendNotableFailures(result: EvaluationResult) {
         appendLine()
         appendLine("## Notable Failures")
         appendLine()
-        if (errors.isEmpty()) {
+        val hasFailures =
+            result.conversion.errors.isNotEmpty() ||
+                result.fileCoverage.missingKotlinFiles.isNotEmpty() ||
+                result.fileCoverage.packageMismatchFiles.isNotEmpty() ||
+                result.quality.findings.isNotEmpty()
+
+        if (!hasFailures) {
             appendLine("- None")
-        } else {
-            errors.forEach { error -> appendLine("- `$error`") }
+            return
+        }
+
+        if (result.conversion.errors.isNotEmpty()) {
+            appendLine("- Converter errors: `${result.conversion.errors.size}`")
+            result.conversion.errors.forEach { error -> appendLine("  - `$error`") }
+        }
+        if (result.fileCoverage.missingKotlinFiles.isNotEmpty()) {
+            appendLine("- Missing generated Kotlin files: `${result.fileCoverage.missingKotlinFiles.size}`")
+            result.fileCoverage.missingKotlinFiles.forEach { missingFile -> appendLine("  - `$missingFile`") }
+        }
+        if (result.fileCoverage.packageMismatchFiles.isNotEmpty()) {
+            appendLine("- Package mismatches: `${result.fileCoverage.packageMismatchFiles.size}`")
+            result.fileCoverage.packageMismatchFiles.forEach { mismatch -> appendLine("  - `$mismatch`") }
+        }
+        if (result.quality.findings.isNotEmpty()) {
+            appendLine(
+                "- Kotlin quality review warnings: `${result.quality.findings.size}` " +
+                    "(review risks, not conversion execution failures)",
+            )
         }
     }
 
@@ -260,6 +288,131 @@ class EvaluationReportWriter(
      * Formats report percentages with stable decimal separators across locales.
      */
     private fun formatPercent(value: Double): String = String.format(Locale.US, "%.2f", value)
+
+    /**
+     * Renders benchmark metadata to a JSON-compatible map.
+     */
+    private fun benchmarkJson(result: EvaluationResult): Map<String, Any?> =
+        linkedMapOf(
+            "id" to result.config.id,
+            "name" to result.config.name,
+            "role" to result.config.role,
+            "repository_source" to result.config.repository.source,
+            "repository_upstream" to result.config.repository.upstream,
+            "repository_ref" to result.config.repository.ref,
+        )
+
+    /**
+     * Renders evaluator paths to a JSON-compatible map.
+     */
+    private fun pathsJson(result: EvaluationResult): Map<String, Any?> =
+        linkedMapOf(
+            "checkout_directory" to result.checkoutDirectory.toString(),
+            "generated_kotlin_directory" to result.generatedKotlinDirectory.toString(),
+            "conversion_report" to result.conversionReportPath.toString(),
+            "checkout_report" to result.checkoutReportPath.toString(),
+            "report_directory" to result.reportDirectory.toString(),
+        )
+
+    /**
+     * Renders checkout metadata to a JSON-compatible map.
+     */
+    private fun checkoutJson(checkout: CheckoutEvaluation): Map<String, Any?> =
+        linkedMapOf(
+            "available" to checkout.available,
+            "benchmark_id" to checkout.benchmarkId,
+            "build_status" to checkout.buildStatus,
+            "java_file_count" to checkout.javaFileCount,
+            "run_build" to checkout.runBuild,
+        )
+
+    /**
+     * Renders conversion metadata to a JSON-compatible map.
+     */
+    private fun conversionJson(conversion: ConversionEvaluation): Map<String, Any?> =
+        linkedMapOf(
+            "available" to conversion.available,
+            "benchmark_id" to conversion.benchmarkId,
+            "status" to conversion.status,
+            "source_java_file_count" to conversion.sourceJavaFileCount,
+            "generated_kotlin_file_count" to conversion.generatedKotlinFileCount,
+            "warning_count" to conversion.warningCount,
+            "error_count" to conversion.errorCount,
+            "warnings" to conversion.warnings,
+            "errors" to conversion.errors,
+        )
+
+    /**
+     * Renders assignment-facing analysis metadata to a JSON-compatible map.
+     */
+    private fun assignmentAnalysisJson(result: EvaluationResult): Map<String, Any?> =
+        linkedMapOf(
+            "benchmark_role" to result.config.role,
+            "analysis_method" to "structural_heuristics",
+            "conversion_status" to result.conversion.status,
+            "evaluation_status" to result.status.name.lowercase(),
+            "file_coverage_percent" to result.fileCoverage.coveragePercent,
+            "missing_output_count" to result.fileCoverage.missingKotlinFiles.size,
+            "quality_warning_count" to result.quality.findings.size,
+        )
+
+    /**
+     * Renders summary counts to a JSON-compatible map.
+     */
+    private fun countsJson(result: EvaluationResult): Map<String, Any?> =
+        linkedMapOf(
+            "java_file_count" to result.fileCoverage.javaFileCount,
+            "kotlin_file_count" to result.fileCoverage.kotlinFileCount,
+            "warning_count" to result.warnings.size,
+        )
+
+    /**
+     * Renders evaluator warnings to JSON-compatible maps.
+     */
+    private fun warningsJson(warnings: List<EvaluationWarning>): List<Map<String, Any?>> =
+        warnings.map { warning ->
+            linkedMapOf(
+                "code" to warning.code,
+                "message" to warning.message,
+                "path" to warning.path,
+                "count" to warning.count,
+            )
+        }
+
+    /**
+     * Describes whether conversion metadata proves that the static J2K pipeline ran.
+     */
+    private fun assignmentPipelineStatus(conversion: ConversionEvaluation): String =
+        if (conversion.available) {
+            "static J2K conversion report available with status ${conversion.status}"
+        } else {
+            "static J2K conversion report unavailable"
+        }
+
+    /**
+     * Describes benchmark role in assignment terms.
+     */
+    private fun benchmarkRoleDescription(role: String): String =
+        when (role.lowercase()) {
+            "primary" -> "primary real-world benchmark"
+            "calibration" -> "calibration benchmark"
+            else -> role
+        }
+
+    /**
+     * Builds a concise benchmark verdict from conversion and coverage data.
+     */
+    private fun resultVerdict(result: EvaluationResult): String =
+        when {
+            !result.conversion.available ->
+                "The evaluator ran, but conversion metadata is missing, so this artifact is incomplete."
+            result.conversion.errors.isNotEmpty() || result.fileCoverage.missingKotlinFiles.isNotEmpty() ->
+                "Static J2K produced a partial conversion with concrete failures that need manual review."
+            result.fileCoverage.coveragePercent == COMPLETE_COVERAGE ->
+                "Static J2K generated Kotlin for every configured Java input; remaining warnings are quality-review signals."
+            else ->
+                "Static J2K produced generated Kotlin, but file coverage is incomplete and should be reviewed."
+        }
 
     /**
      * Renders file coverage metrics to a JSON-compatible map.
@@ -321,4 +474,8 @@ class EvaluationReportWriter(
                     )
                 },
         )
+
+    private companion object {
+        private const val COMPLETE_COVERAGE = 100.0
+    }
 }
