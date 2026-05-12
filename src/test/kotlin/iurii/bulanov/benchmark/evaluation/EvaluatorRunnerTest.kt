@@ -39,6 +39,7 @@ class EvaluatorRunnerTest {
         val checkoutDirectory = Path.of("build/benchmarks/$benchmarkId/source")
         val generatedDirectory = Files.createTempDirectory("generated-kotlin-")
         val reportDirectory = Files.createTempDirectory("evaluation-report-explicit-")
+        val githubSummary = Files.createTempFile("github-step-summary-", ".md")
         val conversionReport = Files.createTempFile("conversion-report-", ".json")
         val checkoutReport = Files.createTempFile("checkout-report-", ".json")
         checkoutDirectory.resolve("src/main/java/com/example").createDirectories()
@@ -57,15 +58,21 @@ class EvaluatorRunnerTest {
                     reportDirectory = reportDirectory,
                     conversionReport = conversionReport,
                     checkoutReport = checkoutReport,
+                    githubSummaryPath = githubSummary,
                 ),
             )
 
         val json = reportDirectory.resolve("evaluation.json").readText()
+        val summary = githubSummary.readText()
         assertEquals(0, exitCode)
         assertContains(json, "\"generated_kotlin_directory\":\"${generatedDirectory.normalize()}\"")
         assertContains(json, "\"report_directory\":\"${reportDirectory.normalize()}\"")
         assertContains(json, "\"status\":\"completed\"")
         assertContains(json, "\"kotlin_file_count\":1")
+        assertContains(summary, "# J2K Evaluation Summary")
+        assertContains(summary, "## Assignment Fit")
+        assertContains(summary, "## Result Interpretation")
+        assertContains(summary, "Static J2K generated Kotlin for every configured Java input")
     }
 
     @Test
