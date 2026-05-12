@@ -1,0 +1,83 @@
+name: J2K Evaluation Pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - build.gradle.kts
+      - settings.gradle.kts
+      - gradle/**
+      - gradlew
+      - gradlew.bat
+      - src/**
+      - benchmarks/hikaricp.yml
+      - benchmarks/spring-petclinic.yml
+      - j2k-runner-plugin/**
+      - .github/workflows/j2k-eval.yml
+  pull_request:
+    paths:
+      - build.gradle.kts
+      - settings.gradle.kts
+      - gradle/**
+      - gradlew
+      - gradlew.bat
+      - src/**
+      - benchmarks/hikaricp.yml
+      - benchmarks/spring-petclinic.yml
+      - j2k-runner-plugin/**
+      - .github/workflows/j2k-eval.yml
+
+jobs:
+  j2k-eval:
+    name: Convert and evaluate ${{ matrix.config }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - benchmark: hikaricp
+            config: benchmarks/hikaricp.yml
+          - benchmark: spring-petclinic
+            config: benchmarks/spring-petclinic.yml
+
+    steps:
+      - name: Checkout harness repository
+        uses: actions/checkout@v4
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Setup Temurin JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Validate and checkout benchmark inputs
+        shell: bash
+        run: |
+          ./gradlew --no-daemon run --args="checkout-benchmark --config ${{ matrix.config }} --github-summary $GITHUB_STEP_SUMMARY --github-output $GITHUB_OUTPUT"
+
+      - name: Run static J2K conversion
+        shell: bash
+        run: |
+          mkdir -p build/j2k/${{ matrix.benchmark }}/logs
+          if ! ./gradlew --no-daemon convertBenchmark -PbenchmarkConfig=${{ matrix.config }} > build/j2k/${{ matrix.benchmark }}/logs/gradle-convert.log 2>&1; then
+            tail -200 build/j2k/${{ matrix.benchmark }}/logs/gradle-convert.log
+            exit 1
+          fi
+
+      - name: Run evaluator
+        shell: bash
+        run: |
+          ./gradlew --no-daemon run --args="evaluate --config ${{ matrix.config }}"
+
+      - name: Upload conversion and evaluation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: j2k-eval-${{ matrix.benchmark }}
+          path: |
+            build/j2k/**
+            build/reports/j2k-eval/**
+          if-no-files-found: warn
