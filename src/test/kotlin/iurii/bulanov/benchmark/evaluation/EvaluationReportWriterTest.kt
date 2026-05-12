@@ -39,13 +39,18 @@ class EvaluationReportWriterTest {
         assertContains(jsonPath.readText(), "\"quality_warning_count\":1")
 
         val summary = summaryPath.readText()
-        assertContains(summary, "## Assignment Fit")
+        assertFalse(summary.contains("## Benchmark"))
+        assertFalse(summary.contains("## Assignment Fit"))
         assertContains(summary, "## Result Interpretation")
         assertContains(summary, "## Conversion Execution")
         assertContains(summary, "## Kotlin Quality Warnings")
         assertContains(summary, "Static J2K produced a partial conversion")
         assertContains(summary, "Java files discovered: `1`")
-        assertContains(summary, "This section is the assignment's comparative analysis")
+        assertContains(summary, "Generated Kotlin is compared with the original Java source")
+        assertContains(summary, "Java API names missing in Kotlin: `2`")
+        assertContains(summary, "Kotlin-only API names: `1`")
+        assertContains(summary, "`MissingClass`")
+        assertContains(summary, "`newHelper`")
         assertContains(summary, "Missing generated Kotlin files: `1`")
         assertContains(summary, "`App.kt`")
         assertContains(summary, "`generated_kotlin_directory_missing`")
@@ -137,6 +142,7 @@ class EvaluationReportWriterTest {
                     kotlinFunctionCount = 1,
                     publicApiNameOverlapCount = 1,
                     missingPublicApiNames = emptyList(),
+                    kotlinOnlyPublicApiNames = emptyList(),
                 ),
             quality = emptyQuality(),
             status = EvaluationStatus.COMPLETED,
@@ -211,7 +217,8 @@ class EvaluationReportWriterTest {
             javaMethodCount = 1,
             kotlinFunctionCount = 0,
             publicApiNameOverlapCount = 0,
-            missingPublicApiNames = listOf("App"),
+            missingPublicApiNames = listOf("App", "MissingClass"),
+            kotlinOnlyPublicApiNames = listOf("newHelper"),
         )
 
     /**

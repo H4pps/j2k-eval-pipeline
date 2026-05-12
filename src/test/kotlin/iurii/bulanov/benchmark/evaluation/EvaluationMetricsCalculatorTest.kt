@@ -23,7 +23,7 @@ class EvaluationMetricsCalculatorTest {
         val extraKotlin = kotlinRoot.resolve("Extra.kt")
         appJava.writeText("package com.example; public class App { public String name() { return \"x\"; } }")
         missingJava.writeText("package com.example; public class Missing {}")
-        appKotlin.writeText("package com.example\nclass App { fun name(input: Any?) = call(input!!) }")
+        appKotlin.writeText("package com.example\nclass App { fun name(input: Any?) = call(input!!); fun newHelper() = Unit }")
         extraKotlin.writeText("")
 
         val metrics =
@@ -50,6 +50,8 @@ class EvaluationMetricsCalculatorTest {
         assertEquals(1, metrics.fileCoverage.packagePreservedCount)
         assertTrue(metrics.structure.javaTopLevelDeclarationCount >= 2)
         assertTrue(metrics.structure.kotlinTopLevelDeclarationCount >= 1)
+        assertContains(metrics.structure.missingPublicApiNames, "Missing")
+        assertContains(metrics.structure.kotlinOnlyPublicApiNames, "newHelper")
         assertEquals(1, metrics.quality.notNullAssertionCount)
         assertEquals(1, metrics.quality.notNullAssertionInCallCount)
         assertEquals(1, metrics.quality.anyNullableCount)

@@ -135,6 +135,7 @@ data class StructuralMetrics(
     val kotlinFunctionCount: Int,
     val publicApiNameOverlapCount: Int,
     val missingPublicApiNames: List<String>,
+    val kotlinOnlyPublicApiNames: List<String>,
 )
 
 /**

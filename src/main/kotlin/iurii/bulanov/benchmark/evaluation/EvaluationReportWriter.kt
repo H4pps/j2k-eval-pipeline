@@ -56,8 +56,6 @@ class EvaluationReportWriter(
     fun renderMarkdown(result: EvaluationResult): String =
         buildString {
             appendLine("# J2K Evaluation Summary")
-            appendBenchmark(result)
-            appendAssignmentFit(result)
             appendResultInterpretation(result)
             appendPaths(result)
             appendConversion(result.conversion)
@@ -68,33 +66,6 @@ class EvaluationReportWriter(
             appendNotableFailures(result)
             appendWarnings(result)
         }
-
-    /**
-     * Appends benchmark metadata to the Markdown summary.
-     */
-    private fun StringBuilder.appendBenchmark(result: EvaluationResult) {
-        appendLine()
-        appendLine("## Benchmark")
-        appendLine()
-        appendLine("- ID: `${result.config.id}`")
-        appendLine("- Name: `${result.config.name}`")
-        appendLine("- Role: `${result.config.role}`")
-        appendLine("- Repository source: `${result.config.repository.source}`")
-        appendLine("- Pinned ref: `${result.config.repository.ref}`")
-    }
-
-    /**
-     * Appends assignment-success framing to the Markdown summary.
-     */
-    private fun StringBuilder.appendAssignmentFit(result: EvaluationResult) {
-        appendLine()
-        appendLine("## Assignment Fit")
-        appendLine()
-        appendLine("- Static J2K pipeline: `${assignmentPipelineStatus(result.conversion)}`")
-        appendLine("- Evaluator implementation: `Kotlin-only evaluator`")
-        appendLine("- Benchmark role: `${benchmarkRoleDescription(result.config.role)}`")
-        appendLine("- Comparative method: `structural heuristics against the original Java sources`")
-    }
 
     /**
      * Appends a compact human verdict for the benchmark run.
@@ -185,7 +156,7 @@ class EvaluationReportWriter(
         appendLine("## Structural Preservation")
         appendLine()
         appendLine(
-            "This section is the assignment's comparative analysis: generated Kotlin is compared with " +
+            "Generated Kotlin is compared with " +
                 "the original Java source using deterministic structural heuristics.",
         )
         appendLine()
@@ -200,6 +171,10 @@ class EvaluationReportWriter(
         appendLine("- Java methods: `${structure.javaMethodCount}`")
         appendLine("- Kotlin functions: `${structure.kotlinFunctionCount}`")
         appendLine("- Public API name overlap: `${structure.publicApiNameOverlapCount}`")
+        appendLine("- Java API names missing in Kotlin: `${structure.missingPublicApiNames.size}`")
+        appendLine("- Kotlin-only API names: `${structure.kotlinOnlyPublicApiNames.size}`")
+        appendNameList("Java API names missing in Kotlin", structure.missingPublicApiNames)
+        appendNameList("Kotlin-only API names", structure.kotlinOnlyPublicApiNames)
     }
 
     /**
@@ -282,6 +257,30 @@ class EvaluationReportWriter(
         val pathSuffix = warning.path?.let { " `$it`" }.orEmpty()
         val countSuffix = warning.count?.let { " count=`$it`" }.orEmpty()
         appendLine("- `${warning.code}`$pathSuffix$countSuffix: ${warning.message}")
+    }
+
+    /**
+     * Appends a capped deterministic list of structural API names.
+     */
+    private fun StringBuilder.appendNameList(
+        title: String,
+        names: List<String>,
+    ) {
+        appendLine()
+        if (names.isEmpty()) {
+            appendLine("- $title: none")
+            return
+        }
+
+        val displayedNames = names.take(STRUCTURAL_NAME_DISPLAY_LIMIT)
+        val suffix =
+            if (names.size > STRUCTURAL_NAME_DISPLAY_LIMIT) {
+                "first `${displayedNames.size}` of `${names.size}`"
+            } else {
+                "all `${names.size}`"
+            }
+        appendLine("- $title ($suffix):")
+        displayedNames.forEach { name -> appendLine("  - `$name`") }
     }
 
     /**
@@ -380,26 +379,6 @@ class EvaluationReportWriter(
         }
 
     /**
-     * Describes whether conversion metadata proves that the static J2K pipeline ran.
-     */
-    private fun assignmentPipelineStatus(conversion: ConversionEvaluation): String =
-        if (conversion.available) {
-            "static J2K conversion report available with status ${conversion.status}"
-        } else {
-            "static J2K conversion report unavailable"
-        }
-
-    /**
-     * Describes benchmark role in assignment terms.
-     */
-    private fun benchmarkRoleDescription(role: String): String =
-        when (role.lowercase()) {
-            "primary" -> "primary real-world benchmark"
-            "calibration" -> "calibration benchmark"
-            else -> role
-        }
-
-    /**
      * Builds a concise benchmark verdict from conversion and coverage data.
      */
     private fun resultVerdict(result: EvaluationResult): String =
@@ -448,6 +427,7 @@ class EvaluationReportWriter(
             "kotlin_function_count" to metrics.kotlinFunctionCount,
             "public_api_name_overlap_count" to metrics.publicApiNameOverlapCount,
             "missing_public_api_names" to metrics.missingPublicApiNames,
+            "kotlin_only_public_api_names" to metrics.kotlinOnlyPublicApiNames,
         )
 
     /**
@@ -477,5 +457,6 @@ class EvaluationReportWriter(
 
     private companion object {
         private const val COMPLETE_COVERAGE = 100.0
+        private const val STRUCTURAL_NAME_DISPLAY_LIMIT = 50
     }
 }

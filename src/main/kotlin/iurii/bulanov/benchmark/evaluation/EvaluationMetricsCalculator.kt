@@ -156,6 +156,7 @@ class EvaluationMetricsCalculator(
             kotlinFunctionCount = kotlinStructures.sumOf { it.functionNames.size },
             publicApiNameOverlapCount = javaApiNames.intersect(kotlinApiNames).size,
             missingPublicApiNames = javaApiNames.minus(kotlinApiNames).sorted(),
+            kotlinOnlyPublicApiNames = kotlinApiNames.minus(javaApiNames).sorted(),
         )
     }
 

@@ -70,8 +70,9 @@ class EvaluatorRunnerTest {
         assertContains(json, "\"status\":\"completed\"")
         assertContains(json, "\"kotlin_file_count\":1")
         assertContains(summary, "# J2K Evaluation Summary")
-        assertContains(summary, "## Assignment Fit")
         assertContains(summary, "## Result Interpretation")
+        assertContains(summary, "## Structural Preservation")
+        assertContains(summary, "Kotlin-only API names")
         assertContains(summary, "Static J2K generated Kotlin for every configured Java input")
     }
 
