@@ -15,6 +15,8 @@ class J2kEvalCliTest {
         assertContains(result.output, "--run-build")
         assertContains(result.output, "--github-summary")
         assertContains(result.output, "--github-output")
+        assertContains(result.output, "--checkout-report")
+        assertContains(result.output, "--checkout-report")
     }
 
     @Test
@@ -34,6 +36,8 @@ class J2kEvalCliTest {
         assertContains(result.output, "--config")
         assertContains(result.output, "--generated-kotlin")
         assertContains(result.output, "--report-dir")
+        assertContains(result.output, "--conversion-report")
+        assertContains(result.output, "--checkout-report")
     }
 
     @Test

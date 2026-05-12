@@ -39,11 +39,15 @@ class EvaluatorRunnerTest {
         val checkoutDirectory = Path.of("build/benchmarks/$benchmarkId/source")
         val generatedDirectory = Files.createTempDirectory("generated-kotlin-")
         val reportDirectory = Files.createTempDirectory("evaluation-report-explicit-")
+        val conversionReport = Files.createTempFile("conversion-report-", ".json")
+        val checkoutReport = Files.createTempFile("checkout-report-", ".json")
         checkoutDirectory.resolve("src/main/java/com/example").createDirectories()
         checkoutDirectory.resolve("src/main/java/com/example/App.java").writeText("package com.example; class App {}")
         generatedDirectory.resolve("com/example").createDirectories()
         generatedDirectory.resolve("com/example/App.kt").writeText("package com.example\nclass App")
         val configPath = writeConfig(benchmarkId, checkoutDirectory)
+        writeConversionReport(conversionReport, benchmarkId, "completed", 1, 1)
+        writeCheckoutReport(checkoutReport, benchmarkId, 1, "skipped")
 
         val exitCode =
             EvaluatorRunner(logger = NoopLogger).run(
@@ -51,6 +55,8 @@ class EvaluatorRunnerTest {
                     configPath = configPath,
                     generatedKotlinDirectory = generatedDirectory,
                     reportDirectory = reportDirectory,
+                    conversionReport = conversionReport,
+                    checkoutReport = checkoutReport,
                 ),
             )
 
@@ -68,12 +74,16 @@ class EvaluatorRunnerTest {
         val checkoutDirectory = Path.of("build/benchmarks/$benchmarkId/source")
         val generatedDirectory = Files.createTempDirectory("generated-kotlin-missing-")
         val reportDirectory = Files.createTempDirectory("evaluation-report-missing-")
+        val conversionReport = Files.createTempFile("conversion-report-missing-", ".json")
+        val checkoutReport = Files.createTempFile("checkout-report-missing-", ".json")
         checkoutDirectory.resolve("src/main/java/com/example").createDirectories()
         checkoutDirectory.resolve("src/main/java/com/example/App.java").writeText("package com.example; class App {}")
         checkoutDirectory.resolve("src/main/java/com/example/Missing.java").writeText("package com.example; class Missing {}")
         generatedDirectory.resolve("com/example").createDirectories()
         generatedDirectory.resolve("com/example/App.kt").writeText("package com.example\nclass App")
         val configPath = writeConfig(benchmarkId, checkoutDirectory)
+        writeConversionReport(conversionReport, benchmarkId, "partial", 2, 1, errors = listOf("com/example/Missing.java: failed"))
+        writeCheckoutReport(checkoutReport, benchmarkId, 2, "skipped")
 
         val exitCode =
             EvaluatorRunner(logger = NoopLogger).run(
@@ -81,6 +91,8 @@ class EvaluatorRunnerTest {
                     configPath = configPath,
                     generatedKotlinDirectory = generatedDirectory,
                     reportDirectory = reportDirectory,
+                    conversionReport = conversionReport,
+                    checkoutReport = checkoutReport,
                 ),
             )
 
@@ -89,6 +101,7 @@ class EvaluatorRunnerTest {
         assertContains(json, "\"status\":\"completed_with_warnings\"")
         assertContains(json, "generated_kotlin_file_missing")
         assertContains(json, "com/example/Missing.kt")
+        assertContains(json, "\"conversion_failure\"")
     }
 
     @Test
@@ -97,12 +110,16 @@ class EvaluatorRunnerTest {
         val checkoutDirectory = Path.of("build/benchmarks/$benchmarkId/source")
         val generatedDirectory = Files.createTempDirectory("generated-kotlin-extra-")
         val reportDirectory = Files.createTempDirectory("evaluation-report-extra-")
+        val conversionReport = Files.createTempFile("conversion-report-extra-", ".json")
+        val checkoutReport = Files.createTempFile("checkout-report-extra-", ".json")
         checkoutDirectory.resolve("src/main/java/com/example").createDirectories()
         checkoutDirectory.resolve("src/main/java/com/example/App.java").writeText("package com.example; class App {}")
         generatedDirectory.resolve("com/example").createDirectories()
         generatedDirectory.resolve("com/example/App.kt").writeText("package com.example\nclass App")
         generatedDirectory.resolve("com/example/Extra.kt").writeText("package com.example\nclass Extra")
         val configPath = writeConfig(benchmarkId, checkoutDirectory)
+        writeConversionReport(conversionReport, benchmarkId, "completed", 1, 2)
+        writeCheckoutReport(checkoutReport, benchmarkId, 1, "skipped")
 
         val exitCode =
             EvaluatorRunner(logger = NoopLogger).run(
@@ -110,6 +127,8 @@ class EvaluatorRunnerTest {
                     configPath = configPath,
                     generatedKotlinDirectory = generatedDirectory,
                     reportDirectory = reportDirectory,
+                    conversionReport = conversionReport,
+                    checkoutReport = checkoutReport,
                 ),
             )
 
@@ -118,6 +137,68 @@ class EvaluatorRunnerTest {
         assertContains(json, "\"status\":\"completed_with_warnings\"")
         assertContains(json, "generated_kotlin_file_unexpected")
         assertContains(json, "com/example/Extra.kt")
+    }
+
+    @Test
+    fun `evaluator reports missing checkout and conversion reports as warnings`() {
+        val benchmarkId = "eval-runner-no-reports-${System.nanoTime()}"
+        val checkoutDirectory = Path.of("build/benchmarks/$benchmarkId/source")
+        val generatedDirectory = Files.createTempDirectory("generated-kotlin-no-reports-")
+        val reportDirectory = Files.createTempDirectory("evaluation-report-no-reports-")
+        checkoutDirectory.resolve("src/main/java/com/example").createDirectories()
+        checkoutDirectory.resolve("src/main/java/com/example/App.java").writeText("package com.example; class App {}")
+        generatedDirectory.resolve("com/example").createDirectories()
+        generatedDirectory.resolve("com/example/App.kt").writeText("package com.example\nclass App")
+        val configPath = writeConfig(benchmarkId, checkoutDirectory)
+
+        val exitCode =
+            EvaluatorRunner(logger = NoopLogger).run(
+                EvaluationRequest(
+                    configPath = configPath,
+                    generatedKotlinDirectory = generatedDirectory,
+                    reportDirectory = reportDirectory,
+                    conversionReport = Files.createTempDirectory("missing-report-parent").resolve("conversion.json"),
+                    checkoutReport = Files.createTempDirectory("missing-report-parent").resolve("checkout.json"),
+                ),
+            )
+
+        val json = reportDirectory.resolve("evaluation.json").readText()
+        assertEquals(0, exitCode)
+        assertContains(json, "checkout_report_missing")
+        assertContains(json, "conversion_report_missing")
+    }
+
+    @Test
+    fun `evaluator warns when metadata reports belong to another benchmark`() {
+        val benchmarkId = "eval-runner-mismatch-${System.nanoTime()}"
+        val checkoutDirectory = Path.of("build/benchmarks/$benchmarkId/source")
+        val generatedDirectory = Files.createTempDirectory("generated-kotlin-mismatch-")
+        val reportDirectory = Files.createTempDirectory("evaluation-report-mismatch-")
+        val conversionReport = Files.createTempFile("conversion-report-mismatch-", ".json")
+        val checkoutReport = Files.createTempFile("checkout-report-mismatch-", ".json")
+        checkoutDirectory.resolve("src/main/java/com/example").createDirectories()
+        checkoutDirectory.resolve("src/main/java/com/example/App.java").writeText("package com.example; class App {}")
+        generatedDirectory.resolve("com/example").createDirectories()
+        generatedDirectory.resolve("com/example/App.kt").writeText("package com.example\nclass App")
+        val configPath = writeConfig(benchmarkId, checkoutDirectory)
+        writeConversionReport(conversionReport, "other-benchmark", "completed", 1, 1)
+        writeCheckoutReport(checkoutReport, "other-benchmark", 1, "skipped")
+
+        val exitCode =
+            EvaluatorRunner(logger = NoopLogger).run(
+                EvaluationRequest(
+                    configPath = configPath,
+                    generatedKotlinDirectory = generatedDirectory,
+                    reportDirectory = reportDirectory,
+                    conversionReport = conversionReport,
+                    checkoutReport = checkoutReport,
+                ),
+            )
+
+        val json = reportDirectory.resolve("evaluation.json").readText()
+        assertEquals(0, exitCode)
+        assertContains(json, "checkout_report_benchmark_mismatch")
+        assertContains(json, "conversion_report_benchmark_mismatch")
     }
 
     /**
@@ -153,6 +234,57 @@ class EvaluatorRunnerTest {
         )
         configPath.toFile().deleteOnExit()
         return configPath
+    }
+
+    /**
+     * Writes a conversion report fixture for evaluator tests.
+     */
+    private fun writeConversionReport(
+        path: Path,
+        id: String,
+        status: String,
+        sourceJavaFileCount: Int,
+        generatedKotlinFileCount: Int,
+        errors: List<String> = emptyList(),
+    ) {
+        path.writeText(
+            """
+            {
+              "benchmark": {"id": "$id"},
+              "status": "$status",
+              "counts": {
+                "source_java_file_count": $sourceJavaFileCount,
+                "generated_kotlin_file_count": $generatedKotlinFileCount,
+                "warning_count": 0,
+                "error_count": ${errors.size}
+              },
+              "warnings": [],
+              "errors": [${errors.joinToString(",") { "\"$it\"" }}]
+            }
+            """.trimIndent(),
+        )
+    }
+
+    /**
+     * Writes a checkout report fixture for evaluator tests.
+     */
+    private fun writeCheckoutReport(
+        path: Path,
+        id: String,
+        javaFileCount: Int,
+        buildStatus: String,
+    ) {
+        path.writeText(
+            """
+            {
+              "benchmark": {"id": "$id"},
+              "checkout_directory": "build/benchmarks/$id/source",
+              "counts": {"java_file_count": $javaFileCount},
+              "build_status": "$buildStatus",
+              "run_build": false
+            }
+            """.trimIndent(),
+        )
     }
 
     private object NoopLogger : StructuredLogger {

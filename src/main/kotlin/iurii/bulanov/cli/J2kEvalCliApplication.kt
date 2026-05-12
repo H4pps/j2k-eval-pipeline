@@ -79,6 +79,7 @@ private class CheckoutBenchmarkCliktCommand(
     private val runBuild by option("--run-build", help = "Run configured benchmark build commands").flag(default = false)
     private val githubSummaryPath by option("--github-summary", help = "Path to GitHub step summary output").path()
     private val githubOutputPath by option("--github-output", help = "Path to GitHub output file").path()
+    private val checkoutReportPath by option("--checkout-report", help = "Path to checkout JSON report").path()
 
     /**
      * Executes the benchmark checkout workflow through [BenchmarkCheckoutRunner].
@@ -91,6 +92,7 @@ private class CheckoutBenchmarkCliktCommand(
                     runBuild = runBuild,
                     githubSummaryPath = githubSummaryPath,
                     githubOutputPath = githubOutputPath,
+                    checkoutReportPath = checkoutReportPath,
                 ),
             )
         if (exitCode != 0) {
@@ -108,9 +110,11 @@ private class EvaluateCliktCommand(
     private val configPath by option("--config", help = "Path to benchmark YAML config").path().required()
     private val generatedKotlinPath by option("--generated-kotlin", help = "Generated Kotlin output directory").path()
     private val reportDirectoryPath by option("--report-dir", help = "Evaluator report output directory").path()
+    private val conversionReportPath by option("--conversion-report", help = "J2K conversion JSON report path").path()
+    private val checkoutReportPath by option("--checkout-report", help = "Benchmark checkout JSON report path").path()
 
     /**
-     * Executes evaluator discovery and placeholder report generation through [EvaluatorRunner].
+     * Executes evaluator metric calculation and report generation through [EvaluatorRunner].
      */
     override fun run() {
         val exitCode =
@@ -119,6 +123,8 @@ private class EvaluateCliktCommand(
                     configPath = configPath,
                     generatedKotlinDirectory = generatedKotlinPath,
                     reportDirectory = reportDirectoryPath,
+                    conversionReport = conversionReportPath,
+                    checkoutReport = checkoutReportPath,
                 ),
             )
         if (exitCode != 0) {

@@ -19,6 +19,7 @@ class BenchmarkCheckoutRunner(
     private val logger: StructuredLogger = JsonLineLogger(),
     private val configParser: BenchmarkConfigParser = BenchmarkConfigParser(),
     private val checkoutValidator: CheckoutValidator = CheckoutValidator(logger = logger),
+    private val checkoutReportWriter: CheckoutReportWriter = CheckoutReportWriter(logger = logger),
 ) {
     /**
      * Executes checkout validation for [request] and returns a process-style exit code.
@@ -46,6 +47,7 @@ class BenchmarkCheckoutRunner(
             )
 
             val result = checkoutValidator.validate(config, request.runBuild)
+            val checkoutReportPath = checkoutReportWriter.write(result, request.runBuild, request.checkoutReportPath)
             request.githubSummaryPath?.let { writeGitHubSummary(it, request.configPath, result) }
             request.githubOutputPath?.let { writeGitHubOutput(it, result) }
 
@@ -55,6 +57,7 @@ class BenchmarkCheckoutRunner(
                     "id" to result.config.id,
                     "java_file_count" to result.javaFileCount,
                     "build_status" to result.buildStatus.name.lowercase(),
+                    "checkout_report_path" to checkoutReportPath.toString(),
                 ),
             )
             0
@@ -181,4 +184,5 @@ data class CheckoutBenchmarkRequest(
     val runBuild: Boolean,
     val githubSummaryPath: Path?,
     val githubOutputPath: Path?,
+    val checkoutReportPath: Path? = null,
 )

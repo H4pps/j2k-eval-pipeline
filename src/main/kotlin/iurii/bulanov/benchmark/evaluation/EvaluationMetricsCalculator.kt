@@ -1,0 +1,207 @@
+package iurii.bulanov.benchmark.evaluation
+
+import iurii.bulanov.source.DiscoveredSourceFile
+import java.nio.file.Path
+import kotlin.io.path.nameWithoutExtension
+import kotlin.io.path.readText
+
+/**
+ * Calculates deterministic evaluator metrics from discovered Java and Kotlin files.
+ */
+class EvaluationMetricsCalculator(
+    private val scanner: SourceTextScanner = SourceTextScanner(),
+) {
+    /**
+     * Calculates file coverage, structural preservation, and Kotlin quality metrics.
+     */
+    fun calculate(
+        javaFiles: List<DiscoveredSourceFile>,
+        kotlinFiles: List<DiscoveredSourceFile>,
+        sourceRoots: List<String>,
+    ): EvaluationMetrics {
+        val pathIndex = sourcePathIndex(javaFiles, kotlinFiles, sourceRoots)
+        val javaStructures = javaFiles.map { scanner.scanJava(it.absolutePath.readText()) }
+        val kotlinStructures = kotlinFiles.map { scanner.scanKotlin(it.absolutePath.readText()) }
+        val qualityFiles = kotlinFiles.map { scanQuality(it) }
+
+        return EvaluationMetrics(
+            fileCoverage = fileCoverage(javaFiles, kotlinFiles, pathIndex),
+            structure = structure(javaStructures, kotlinStructures),
+            quality = quality(qualityFiles),
+        )
+    }
+
+    /**
+     * Maps a checkout-relative Java path to the generated-output-relative Kotlin path.
+     */
+    fun expectedKotlinRelativePath(
+        javaRelativePath: Path,
+        sourceRoots: List<String>,
+    ): Path {
+        val normalizedJavaPath = javaRelativePath.normalize()
+        val sourceRootRelativePath =
+            sourceRoots
+                .map { Path.of(it).normalize() }
+                .firstOrNull { normalizedJavaPath.startsWith(it) }
+                ?.relativize(normalizedJavaPath)
+                ?: normalizedJavaPath
+        val kotlinFileName = "${sourceRootRelativePath.nameWithoutExtension}.kt"
+        return sourceRootRelativePath.parent?.resolve(kotlinFileName)?.normalize() ?: Path.of(kotlinFileName)
+    }
+
+    /**
+     * Builds lookup tables for expected generated Kotlin paths.
+     */
+    private fun sourcePathIndex(
+        javaFiles: List<DiscoveredSourceFile>,
+        kotlinFiles: List<DiscoveredSourceFile>,
+        sourceRoots: List<String>,
+    ): SourcePathIndex {
+        val javaByExpectedPath = javaFiles.associateBy { expectedKotlinRelativePath(it.relativePath, sourceRoots).toString() }
+        val kotlinByPath = kotlinFiles.associateBy { it.relativePath.normalize().toString() }
+        return SourcePathIndex(
+            javaByExpectedPath = javaByExpectedPath,
+            kotlinByPath = kotlinByPath,
+            matchedPaths = javaByExpectedPath.keys.intersect(kotlinByPath.keys).sorted(),
+            missingKotlinFiles = javaByExpectedPath.keys.minus(kotlinByPath.keys).sorted(),
+            unexpectedKotlinFiles = kotlinByPath.keys.minus(javaByExpectedPath.keys).sorted(),
+        )
+    }
+
+    /**
+     * Calculates file coverage and package preservation metrics.
+     */
+    private fun fileCoverage(
+        javaFiles: List<DiscoveredSourceFile>,
+        kotlinFiles: List<DiscoveredSourceFile>,
+        pathIndex: SourcePathIndex,
+    ): FileCoverageMetrics {
+        val packageMismatches = packageMismatches(pathIndex)
+        return FileCoverageMetrics(
+            javaFileCount = javaFiles.size,
+            kotlinFileCount = kotlinFiles.size,
+            matchedKotlinFileCount = pathIndex.matchedPaths.size,
+            missingKotlinFiles = pathIndex.missingKotlinFiles,
+            unexpectedKotlinFiles = pathIndex.unexpectedKotlinFiles,
+            emptyGeneratedFiles = emptyGeneratedFiles(kotlinFiles),
+            packagePreservedCount = pathIndex.matchedPaths.size - packageMismatches.size,
+            packageMismatchFiles = packageMismatches,
+        )
+    }
+
+    /**
+     * Finds generated Kotlin files that do not preserve the Java package or package path.
+     */
+    private fun packageMismatches(pathIndex: SourcePathIndex): List<String> =
+        pathIndex.matchedPaths.filterNot { relativeKotlinPath ->
+            val javaStructure =
+                scanner.scanJava(
+                    pathIndex.javaByExpectedPath
+                        .getValue(relativeKotlinPath)
+                        .absolutePath
+                        .readText(),
+                )
+            val kotlinStructure =
+                scanner.scanKotlin(
+                    pathIndex.kotlinByPath
+                        .getValue(relativeKotlinPath)
+                        .absolutePath
+                        .readText(),
+                )
+            packageIsPreserved(relativeKotlinPath, javaStructure, kotlinStructure)
+        }
+
+    /**
+     * Checks whether a matched output kept the source package declaration and path.
+     */
+    private fun packageIsPreserved(
+        relativeKotlinPath: String,
+        javaStructure: SourceStructure,
+        kotlinStructure: SourceStructure,
+    ): Boolean {
+        val expectedPackagePath = javaStructure.packageName?.replace('.', '/')
+        val actualPackagePath = Path.of(relativeKotlinPath).parent?.toString()
+        return javaStructure.packageName == kotlinStructure.packageName &&
+            (expectedPackagePath == null || actualPackagePath == expectedPackagePath)
+    }
+
+    /**
+     * Finds blank generated Kotlin files.
+     */
+    private fun emptyGeneratedFiles(kotlinFiles: List<DiscoveredSourceFile>): List<String> =
+        kotlinFiles
+            .filter { it.absolutePath.readText().isBlank() }
+            .map { it.relativePath.normalize().toString() }
+            .sorted()
+
+    /**
+     * Calculates lightweight structural preservation metrics.
+     */
+    private fun structure(
+        javaStructures: List<SourceStructure>,
+        kotlinStructures: List<SourceStructure>,
+    ): StructuralMetrics {
+        val javaApiNames = javaStructures.flatMap { it.publicApiNames }.toSet()
+        val kotlinApiNames = kotlinStructures.flatMap { it.publicApiNames }.toSet()
+        return StructuralMetrics(
+            javaTopLevelDeclarationCount = javaStructures.sumOf { it.topLevelDeclarationCount },
+            kotlinTopLevelDeclarationCount = kotlinStructures.sumOf { it.topLevelDeclarationCount },
+            javaClassLikeCount = javaStructures.sumOf { it.classLikeCount },
+            kotlinClassLikeCount = kotlinStructures.sumOf { it.classLikeCount },
+            javaInterfaceCount = javaStructures.sumOf { it.interfaceCount },
+            kotlinInterfaceCount = kotlinStructures.sumOf { it.interfaceCount },
+            javaEnumCount = javaStructures.sumOf { it.enumCount },
+            kotlinEnumCount = kotlinStructures.sumOf { it.enumCount },
+            javaMethodCount = javaStructures.sumOf { it.functionNames.size },
+            kotlinFunctionCount = kotlinStructures.sumOf { it.functionNames.size },
+            publicApiNameOverlapCount = javaApiNames.intersect(kotlinApiNames).size,
+            missingPublicApiNames = javaApiNames.minus(kotlinApiNames).sorted(),
+        )
+    }
+
+    /**
+     * Scans quality warnings for one generated Kotlin file.
+     */
+    private fun scanQuality(file: DiscoveredSourceFile): QualityFileMetrics =
+        scanner.scanKotlinQuality(
+            path = file.relativePath.normalize().toString(),
+            source = file.absolutePath.readText(),
+        )
+
+    /**
+     * Aggregates per-file Kotlin quality warning metrics.
+     */
+    private fun quality(qualityFiles: List<QualityFileMetrics>): QualityMetrics =
+        QualityMetrics(
+            todoCount = qualityFiles.sumOf { it.todoCount },
+            notNullAssertionCount = qualityFiles.sumOf { it.notNullAssertionCount },
+            notNullAssertionInCallCount = qualityFiles.sumOf { it.notNullAssertionInCallCount },
+            anyNullableCount = qualityFiles.sumOf { it.anyNullableCount },
+            unresolvedImportCount = qualityFiles.sumOf { it.unresolvedImportCount },
+            javaInteropReferenceCount = qualityFiles.sumOf { it.javaInteropReferenceCount },
+            getterSetterCallCount = qualityFiles.sumOf { it.getterSetterCallCount },
+            nullableBooleanComparisonCount = qualityFiles.sumOf { it.nullableBooleanComparisonCount },
+            eagerPropertyInitializationCount = qualityFiles.sumOf { it.eagerPropertyInitializationCount },
+            findings = qualityFiles.flatMap { it.findings },
+        )
+}
+
+/**
+ * Path lookups used by file coverage calculations.
+ */
+private data class SourcePathIndex(
+    val javaByExpectedPath: Map<String, DiscoveredSourceFile>,
+    val kotlinByPath: Map<String, DiscoveredSourceFile>,
+    val matchedPaths: List<String>,
+    val missingKotlinFiles: List<String>,
+    val unexpectedKotlinFiles: List<String>,
+)
+
+/**
+ * Grouped metric families calculated by the evaluator.
+ */
+data class EvaluationMetrics(
+    val fileCoverage: FileCoverageMetrics,
+    val structure: StructuralMetrics,
+    val quality: QualityMetrics,
+)
