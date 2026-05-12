@@ -143,6 +143,9 @@ class EvaluationMetricsCalculator(
     ): StructuralMetrics {
         val javaApiNames = javaStructures.flatMap { it.publicApiNames }.toSet()
         val kotlinApiNames = kotlinStructures.flatMap { it.publicApiNames }.toSet()
+        val nameDiffs = structuralNameDiffs(javaStructures, kotlinStructures)
+        val propertyBackedAccessorNames = nameDiffs.javaBeanAccessorNames.toSet()
+        val propertyNamesBackingAccessors = propertyNamesBackingAccessors(javaStructures, kotlinStructures, propertyBackedAccessorNames)
         return StructuralMetrics(
             javaTopLevelDeclarationCount = javaStructures.sumOf { it.topLevelDeclarationCount },
             kotlinTopLevelDeclarationCount = kotlinStructures.sumOf { it.topLevelDeclarationCount },
@@ -154,10 +157,10 @@ class EvaluationMetricsCalculator(
             kotlinEnumCount = kotlinStructures.sumOf { it.enumCount },
             javaMethodCount = javaStructures.sumOf { it.functionNames.size },
             kotlinFunctionCount = kotlinStructures.sumOf { it.functionNames.size },
-            publicApiNameOverlapCount = javaApiNames.intersect(kotlinApiNames).size,
-            missingPublicApiNames = javaApiNames.minus(kotlinApiNames).sorted(),
-            kotlinOnlyPublicApiNames = kotlinApiNames.minus(javaApiNames).sorted(),
-            nameDiffs = structuralNameDiffs(javaStructures, kotlinStructures),
+            publicApiNameOverlapCount = javaApiNames.intersect(kotlinApiNames).size + propertyBackedAccessorNames.size,
+            missingPublicApiNames = javaApiNames.minus(kotlinApiNames).minus(propertyBackedAccessorNames).sorted(),
+            kotlinOnlyPublicApiNames = kotlinApiNames.minus(javaApiNames).minus(propertyNamesBackingAccessors).sorted(),
+            nameDiffs = nameDiffs,
         )
     }
 
@@ -177,7 +180,11 @@ class EvaluationMetricsCalculator(
                 javaStructures.flatMap { it.functionNames },
                 kotlinStructures.flatMap { it.functionNames },
             )
-        val javaBeanAccessorNames = functionDiff.missingInKotlin.filter { it.isJavaBeanAccessorName() }
+        val ownerScopedAccessorNames = ownerScopedPropertyBackedAccessorNames(javaStructures, kotlinStructures)
+        val javaBeanAccessorNames =
+            functionDiff
+                .missingInKotlin
+                .filter { it in ownerScopedAccessorNames }
 
         return StructuralNameDiffs(
             classLike =
@@ -211,18 +218,49 @@ class EvaluationMetricsCalculator(
     }
 
     /**
-     * Returns whether a missing Java method name looks like a bean getter/setter.
+     * Finds accessor names whose implied properties exist on the same generated Kotlin type.
      */
-    private fun String.isJavaBeanAccessorName(): Boolean =
-        startsWith("get") &&
-            length > BEAN_GETTER_PREFIX_LENGTH &&
-            this[BEAN_GETTER_PREFIX_LENGTH].isUpperCase() ||
-            startsWith("set") &&
-            length > BEAN_SETTER_PREFIX_LENGTH &&
-            this[BEAN_SETTER_PREFIX_LENGTH].isUpperCase() ||
-            startsWith("is") &&
-            length > BEAN_BOOLEAN_GETTER_PREFIX_LENGTH &&
-            this[BEAN_BOOLEAN_GETTER_PREFIX_LENGTH].isUpperCase()
+    private fun ownerScopedPropertyBackedAccessorNames(
+        javaStructures: List<SourceStructure>,
+        kotlinStructures: List<SourceStructure>,
+    ): Set<String> {
+        val kotlinPropertiesByOwner = kotlinStructures.mergedPropertyNamesByOwner()
+        return javaStructures
+            .flatMap { it.javaBeanAccessorPropertyNamesByOwner.entries }
+            .flatMap { (ownerName, accessors) ->
+                val propertyNames = kotlinPropertiesByOwner[ownerName].orEmpty()
+                accessors.entries.filter { (_, candidates) -> candidates.any(propertyNames::contains) }.map { it.key }
+            }.toSet()
+    }
+
+    /**
+     * Finds Kotlin property names backing JavaBean accessors that were matched by method name.
+     */
+    private fun propertyNamesBackingAccessors(
+        javaStructures: List<SourceStructure>,
+        kotlinStructures: List<SourceStructure>,
+        accessorNames: Set<String>,
+    ): Set<String> {
+        val kotlinPropertiesByOwner = kotlinStructures.mergedPropertyNamesByOwner()
+        return javaStructures
+            .flatMap { it.javaBeanAccessorPropertyNamesByOwner.entries }
+            .flatMap { (ownerName, accessors) ->
+                val propertyNames = kotlinPropertiesByOwner[ownerName].orEmpty()
+                accessors
+                    .filterKeys { it in accessorNames }
+                    .values
+                    .flatten()
+                    .filter { it in propertyNames }
+            }.toSet()
+    }
+
+    /**
+     * Merges owner-scoped Kotlin property names across generated files.
+     */
+    private fun List<SourceStructure>.mergedPropertyNamesByOwner(): Map<String, Set<String>> =
+        flatMap { it.propertyNamesByOwner.entries }
+            .groupBy({ it.key }, { it.value })
+            .mapValues { (_, propertySets) -> propertySets.flatten().toSet() }
 
     /**
      * Builds a deterministic two-way name diff.
@@ -285,7 +323,3 @@ data class EvaluationMetrics(
     val structure: StructuralMetrics,
     val quality: QualityMetrics,
 )
-
-private const val BEAN_BOOLEAN_GETTER_PREFIX_LENGTH = 2
-private const val BEAN_GETTER_PREFIX_LENGTH = 3
-private const val BEAN_SETTER_PREFIX_LENGTH = 3

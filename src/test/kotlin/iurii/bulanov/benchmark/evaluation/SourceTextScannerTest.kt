@@ -2,11 +2,12 @@ package iurii.bulanov.benchmark.evaluation
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SourceTextScannerTest {
     @Test
-    fun `scans java and kotlin structural declarations`() {
+    fun `scans java structural declarations with JavaParser`() {
         val scanner = SourceTextScanner()
 
         val java =
@@ -14,18 +15,43 @@ class SourceTextScannerTest {
                 """
                 package com.example;
                 public class App {
+                  private String ignored = "class Ghost { public void fake() {} }";
+                  // interface Ignored {}
                   public String getName() { return "name"; }
+                }
+                record User(String id) {
+                  public String displayName() { return id; }
                 }
                 interface Named {}
                 enum Mode { ON }
                 """.trimIndent(),
             )
+
+        assertEquals("com.example", java.packageName)
+        assertEquals(2, java.classLikeCount)
+        assertEquals(1, java.interfaceCount)
+        assertEquals(1, java.enumCount)
+        assertTrue("App" in java.classLikeNames)
+        assertTrue("User" in java.classLikeNames)
+        assertTrue("Named" in java.interfaceNames)
+        assertTrue("Mode" in java.enumNames)
+        assertTrue("displayName" in java.functionNames)
+        assertTrue("App" in java.publicApiNames)
+        assertFalse("Ghost" in java.publicApiNames)
+        assertFalse("fake" in java.publicApiNames)
+        assertEquals(setOf("name"), java.javaBeanAccessorPropertyNames["getName"])
+    }
+
+    @Test
+    fun `scans kotlin structural declarations with Kotlin PSI`() {
         val kotlin =
-            scanner.scanKotlin(
+            SourceTextScanner().scanKotlin(
                 """
                 package com.example
-                class App {
-                  fun name(): String = "name"
+                class App(val title: String) {
+                  val name: String = "name"
+                  private val ignored = "fun fake() = Unit"
+                  fun run(): String = name
                 }
                 interface Named
                 enum class Mode { ON }
@@ -33,14 +59,6 @@ class SourceTextScannerTest {
                 """.trimIndent(),
             )
 
-        assertEquals("com.example", java.packageName)
-        assertEquals(1, java.classLikeCount)
-        assertEquals(1, java.interfaceCount)
-        assertEquals(1, java.enumCount)
-        assertTrue("App" in java.classLikeNames)
-        assertTrue("Named" in java.interfaceNames)
-        assertTrue("Mode" in java.enumNames)
-        assertTrue("App" in java.publicApiNames)
         assertEquals("com.example", kotlin.packageName)
         assertEquals(1, kotlin.classLikeCount)
         assertEquals(1, kotlin.interfaceCount)
@@ -51,25 +69,34 @@ class SourceTextScannerTest {
         assertTrue("Mode" in kotlin.enumNames)
         assertTrue("Singleton" in kotlin.objectNames)
         assertTrue("name" in kotlin.publicApiNames)
+        assertTrue("title" in kotlin.propertyNames)
+        assertTrue("run" in kotlin.functionNames)
+        assertFalse("ignored" in kotlin.propertyNames)
+        assertFalse("fake" in kotlin.functionNames)
     }
 
     @Test
-    fun `scans kotlin quality warning categories`() {
+    fun `scans kotlin quality warning categories with Kotlin PSI`() {
         val metrics =
             SourceTextScanner().scanKotlinQuality(
                 path = "com/example/App.kt",
                 source =
                     """
                     package com.example
+                    // TODO() and foo.getIgnored() inside comments must not count.
                     import missing.Symbol
-                    import org.springframework.validation.Errors
                     class App {
+                      private val ignored = "TODO() value!! Any? foo.getIgnored()"
                       val name: String = getCurrentUser().name
                       fun run(value: Any?, foo: Foo?) {
                         call(value!!)
                         if (foo?.isEnabled != true) TODO()
                         java.util.Arrays.toString(arrayOf(1))
+                        val optional = java.util.Optional.empty<String>()
+                        val type = Class.forName("com.example.App")
+                        val javaClass = App::class.java
                         foo.getName()
+                        foo?.setName("name")
                       }
                     }
                     """.trimIndent(),
@@ -81,7 +108,7 @@ class SourceTextScannerTest {
         assertEquals(1, metrics.anyNullableCount)
         assertEquals(1, metrics.unresolvedImportCount)
         assertTrue(metrics.javaInteropReferenceCount > 0)
-        assertEquals(1, metrics.getterSetterCallCount)
+        assertEquals(2, metrics.getterSetterCallCount)
         assertEquals(1, metrics.nullableBooleanComparisonCount)
         assertEquals(1, metrics.eagerPropertyInitializationCount)
     }

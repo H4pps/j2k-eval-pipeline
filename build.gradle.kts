@@ -27,6 +27,8 @@ repositories {
 
 dependencies {
     implementation("com.github.ajalt.clikt:clikt:5.1.0")
+    implementation("com.github.javaparser:javaparser-core:3.28.0")
+    implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.20")
     implementation("org.snakeyaml:snakeyaml-engine:2.9")
     testImplementation(kotlin("test"))
 }

@@ -1,59 +1,122 @@
 package iurii.bulanov.benchmark.evaluation
 
+import com.github.javaparser.JavaParser
+import com.github.javaparser.ParseStart
+import com.github.javaparser.ParserConfiguration
+import com.github.javaparser.Providers
+import com.github.javaparser.ast.CompilationUnit
+import com.github.javaparser.ast.Node
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
+import com.github.javaparser.ast.body.EnumDeclaration
+import com.github.javaparser.ast.body.MethodDeclaration
+import com.github.javaparser.ast.body.RecordDeclaration
+import org.jetbrains.kotlin.K1Deprecation
+import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
+import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
+import org.jetbrains.kotlin.com.intellij.openapi.util.Disposer
+import org.jetbrains.kotlin.com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.config.CommonConfigurationKeys
+import org.jetbrains.kotlin.config.CompilerConfiguration
+import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.psi.KtBinaryExpression
+import org.jetbrains.kotlin.psi.KtCallExpression
+import org.jetbrains.kotlin.psi.KtClass
+import org.jetbrains.kotlin.psi.KtClassBody
+import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.psi.KtElement
+import org.jetbrains.kotlin.psi.KtEnumEntry
+import org.jetbrains.kotlin.psi.KtExpression
+import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.psi.KtNullableType
+import org.jetbrains.kotlin.psi.KtObjectDeclaration
+import org.jetbrains.kotlin.psi.KtParameter
+import org.jetbrains.kotlin.psi.KtPostfixExpression
+import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.psi.KtPsiFactory
+import org.jetbrains.kotlin.psi.KtSafeQualifiedExpression
+import org.jetbrains.kotlin.psi.psiUtil.collectDescendantsOfType
+
 /**
- * Extracts deterministic structural and quality signals from source text.
+ * Extracts deterministic structural and quality signals from source text using language parsers.
  */
 class SourceTextScanner {
+    private val javaParser = JavaParser(ParserConfiguration())
+    private val kotlinDisposable = Disposer.newDisposable()
+    private val kotlinPsiFactory: KtPsiFactory by lazy { KtPsiFactory(kotlinEnvironment().project, markGenerated = false) }
+
     /**
-     * Scans Java source text for package, declarations, and method-like members.
+     * Scans Java source text for package, declarations, methods, and JavaBean accessor mappings.
      */
     fun scanJava(source: String): SourceStructure {
-        val cleaned = stripCommentsAndStrings(source)
-        val declarations = JAVA_DECLARATION_REGEX.findAll(cleaned).map { match -> match.groupValues[2] to match.groupValues[1] }.toList()
-        val methodNames =
-            JAVA_METHOD_REGEX
-                .findAll(cleaned)
-                .map { match -> match.groupValues[1] }
-                .filterNot { it in CONTROL_KEYWORDS }
-                .toSet()
-        val declarationNames = declarations.map { it.first }.toSet()
+        val unit = parseJava(source)
+        val classes = unit.findAll(ClassOrInterfaceDeclaration::class.java)
+        val classNames = classes.filterNot { it.isInterface }.map { it.nameAsString }.toSet()
+        val interfaceNames = classes.filter { it.isInterface }.map { it.nameAsString }.toSet()
+        val recordNames = unit.findAll(RecordDeclaration::class.java).map { it.nameAsString }.toSet()
+        val enumNames = unit.findAll(EnumDeclaration::class.java).map { it.nameAsString }.toSet()
+        val methodDeclarations = unit.findAll(MethodDeclaration::class.java)
+        val methodNames = methodDeclarations.map { it.nameAsString }.toSet()
+        val declarationNames = classNames + recordNames + interfaceNames + enumNames
+        val javaBeanAccessorPropertyNamesByOwner = methodDeclarations.javaBeanAccessorPropertyNamesByOwner()
+
         return SourceStructure(
-            packageName = packageName(cleaned, JAVA_PACKAGE_REGEX),
-            classLikeCount = declarations.count { it.second == "class" || it.second == "record" },
-            interfaceCount = declarations.count { it.second == "interface" },
-            enumCount = declarations.count { it.second == "enum" },
+            packageName = unit.packageDeclaration.map { it.nameAsString }.orElse(null),
+            classLikeCount = classNames.size + recordNames.size,
+            interfaceCount = interfaceNames.size,
+            enumCount = enumNames.size,
             objectCount = 0,
-            classLikeNames = declarations.namesForKinds("class", "record"),
-            interfaceNames = declarations.namesForKinds("interface"),
-            enumNames = declarations.namesForKinds("enum"),
+            classLikeNames = classNames + recordNames,
+            interfaceNames = interfaceNames,
+            enumNames = enumNames,
             objectNames = emptySet(),
             topLevelNames = declarationNames,
             functionNames = methodNames,
+            propertyNames = emptySet(),
+            propertyNamesByOwner = emptyMap(),
+            javaBeanAccessorPropertyNames = javaBeanAccessorPropertyNamesByOwner.flattenValues(),
+            javaBeanAccessorPropertyNamesByOwner = javaBeanAccessorPropertyNamesByOwner,
             publicApiNames = declarationNames + methodNames,
         )
     }
 
     /**
-     * Scans Kotlin source text for package, declarations, and function members.
+     * Scans Kotlin source text for package, declarations, functions, and properties.
      */
     fun scanKotlin(source: String): SourceStructure {
-        val cleaned = stripCommentsAndStrings(source)
-        val declarations = KOTLIN_DECLARATION_REGEX.findAll(cleaned).map { match -> match.groupValues[2] to match.groupValues[1] }.toList()
-        val functionNames = KOTLIN_FUNCTION_REGEX.findAll(cleaned).map { it.groupValues[1] }.toSet()
-        val declarationNames = declarations.map { it.first }.toSet()
+        val file = parseKotlin(source)
+        val classes = file.collectDescendantsOfType<KtClass>().filterNot { it is KtEnumEntry }
+        val classNames = classes.filter { !it.isInterfaceClass() && !it.isEnumClass() }.mapNotNull { it.name }.toSet()
+        val interfaceNames = classes.filter { it.isInterfaceClass() }.mapNotNull { it.name }.toSet()
+        val enumNames = classes.filter { it.isEnumClass() }.mapNotNull { it.name }.toSet()
+        val objectNames =
+            file
+                .collectDescendantsOfType<KtObjectDeclaration>()
+                .filterNot { it.isCompanion() }
+                .mapNotNull { it.name }
+                .toSet()
+        val functionNames = file.collectDescendantsOfType<KtNamedFunction>().mapNotNull { it.name }.toSet()
+        val propertyRecords = file.kotlinPropertyRecords()
+        val propertyNames = propertyRecords.map { it.name }.toSet()
+        val declarationNames = classNames + interfaceNames + enumNames + objectNames
+
         return SourceStructure(
-            packageName = packageName(cleaned, KOTLIN_PACKAGE_REGEX),
-            classLikeCount = declarations.count { it.second in KOTLIN_CLASS_DECLARATIONS },
-            interfaceCount = declarations.count { it.second == "interface" },
-            enumCount = declarations.count { it.second == "enum class" },
-            objectCount = declarations.count { it.second == "object" },
-            classLikeNames = declarations.namesForKinds(*KOTLIN_CLASS_DECLARATIONS.toTypedArray()),
-            interfaceNames = declarations.namesForKinds("interface"),
-            enumNames = declarations.namesForKinds("enum class"),
-            objectNames = declarations.namesForKinds("object"),
+            packageName = file.packageFqName.asString().ifEmpty { null },
+            classLikeCount = classNames.size,
+            interfaceCount = interfaceNames.size,
+            enumCount = enumNames.size,
+            objectCount = objectNames.size,
+            classLikeNames = classNames,
+            interfaceNames = interfaceNames,
+            enumNames = enumNames,
+            objectNames = objectNames,
             topLevelNames = declarationNames,
             functionNames = functionNames,
-            publicApiNames = declarationNames + functionNames,
+            propertyNames = propertyNames,
+            propertyNamesByOwner = propertyRecords.groupByOwner(),
+            javaBeanAccessorPropertyNames = emptyMap(),
+            javaBeanAccessorPropertyNamesByOwner = emptyMap(),
+            publicApiNames = declarationNames + functionNames + propertyNames,
         )
     }
 
@@ -64,8 +127,8 @@ class SourceTextScanner {
         path: String,
         source: String,
     ): QualityFileMetrics {
-        val cleaned = stripCommentsAndStrings(source)
-        val counts = qualityCounts(cleaned)
+        val file = parseKotlin(source)
+        val counts = qualityCounts(file)
         return QualityFileMetrics(
             todoCount = counts.todoCount,
             notNullAssertionCount = counts.notNullAssertionCount,
@@ -81,37 +144,50 @@ class SourceTextScanner {
     }
 
     /**
-     * Replaces comments and string/character literals with whitespace.
+     * Parses Java source or fails with JavaParser diagnostics.
      */
-    fun stripCommentsAndStrings(source: String): String {
-        val output = StringBuilder(source.length)
-        var index = 0
-        while (index < source.length) {
-            when {
-                source.startsWith("//", index) -> index = consumeLineComment(source, index, output)
-                source.startsWith("/*", index) -> index = consumeBlockComment(source, index, output)
-                source[index] == '"' -> index = consumeQuoted(source, index, output, '"')
-                source[index] == '\'' -> index = consumeQuoted(source, index, output, '\'')
-                else -> output.append(source[index++])
-            }
+    private fun parseJava(source: String): CompilationUnit {
+        val result = javaParser.parse(ParseStart.COMPILATION_UNIT, Providers.provider(source))
+        return result.result.orElseThrow {
+            IllegalArgumentException("Unable to parse Java source for evaluation: ${result.problems.joinToString()}")
         }
-        return output.toString()
     }
 
     /**
-     * Counts all Kotlin quality warning patterns in cleaned source text.
+     * Parses Kotlin source into PSI without semantic analysis.
      */
-    private fun qualityCounts(source: String): KotlinQualityCounts =
+    private fun parseKotlin(source: String): KtFile = kotlinPsiFactory.createFile(KOTLIN_SYNTHETIC_FILE_NAME, source)
+
+    /**
+     * Creates the minimal Kotlin compiler environment needed by [KtPsiFactory].
+     */
+    @OptIn(K1Deprecation::class)
+    private fun kotlinEnvironment(): KotlinCoreEnvironment {
+        val configuration = CompilerConfiguration()
+        configuration.put(CommonConfigurationKeys.MODULE_NAME, KOTLIN_SYNTHETIC_MODULE_NAME)
+        return KotlinCoreEnvironment.createForProduction(kotlinDisposable, configuration, EnvironmentConfigFiles.JVM_CONFIG_FILES)
+    }
+
+    /**
+     * Counts all Kotlin quality warning categories from PSI nodes.
+     */
+    private fun qualityCounts(file: KtFile): KotlinQualityCounts =
         KotlinQualityCounts(
-            todoCount = TODO_REGEX.findAll(source).count(),
-            notNullAssertionCount = NOT_NULL_ASSERTION_REGEX.findAll(source).count(),
-            notNullAssertionInCallCount = NOT_NULL_IN_CALL_REGEX.findAll(source).count(),
-            anyNullableCount = ANY_NULLABLE_REGEX.findAll(source).count(),
-            unresolvedImportCount = UNRESOLVED_IMPORT_REGEX.findAll(source).count(),
-            javaInteropReferenceCount = JAVA_INTEROP_REGEX.findAll(source).count(),
-            getterSetterCallCount = GETTER_SETTER_CALL_REGEX.findAll(source).count(),
-            nullableBooleanComparisonCount = NULLABLE_BOOLEAN_REGEX.findAll(source).count(),
-            eagerPropertyInitializationCount = EAGER_PROPERTY_REGEX.findAll(source).count(),
+            todoCount = file.collectDescendantsOfType<KtCallExpression>().count { it.isTodoCall() },
+            notNullAssertionCount = file.collectDescendantsOfType<KtPostfixExpression>().count { it.isNotNullAssertion() },
+            notNullAssertionInCallCount = file.collectDescendantsOfType<KtCallExpression>().count { it.hasNotNullArgument() },
+            anyNullableCount = file.collectDescendantsOfType<KtNullableType>().count { it.isAnyNullable() },
+            unresolvedImportCount = file.importDirectives.count { it.text.containsAny(UNRESOLVED_IMPORT_MARKERS) },
+            javaInteropReferenceCount = file.collectDescendantsOfType<KtDotQualifiedExpression>().count { it.isJavaInteropReference() },
+            getterSetterCallCount = file.collectDescendantsOfType<KtCallExpression>().count { it.isGetterSetterCall() },
+            nullableBooleanComparisonCount =
+                file
+                    .collectDescendantsOfType<KtBinaryExpression>()
+                    .count { it.isNullableBooleanComparison() },
+            eagerPropertyInitializationCount =
+                file
+                    .collectDescendantsOfType<KtProperty>()
+                    .count { it.isEagerPropertyInitialization() },
         )
 
     /**
@@ -178,115 +254,303 @@ class SourceTextScanner {
     }
 
     /**
-     * Extracts package declaration using [regex].
+     * Collects public Kotlin member, top-level, and primary-constructor property records.
      */
-    private fun packageName(
-        source: String,
-        regex: Regex,
-    ): String? = regex.find(source)?.groupValues?.get(1)
-
-    /**
-     * Extracts declaration names whose declaration kind is in [kinds].
-     */
-    private fun List<Pair<String, String>>.namesForKinds(vararg kinds: String): Set<String> {
-        val expectedKinds = kinds.toSet()
-        return filter { it.second in expectedKinds }.map { it.first }.toSet()
+    private fun KtFile.kotlinPropertyRecords(): List<KotlinPropertyRecord> {
+        val declaredProperties =
+            collectDescendantsOfType<KtProperty>()
+                .filterNot { it.hasModifier(KtTokens.PRIVATE_KEYWORD) }
+                .filter { it.parent is KtFile || it.parent is KtClassBody }
+                .mapNotNull { property -> property.name?.let { KotlinPropertyRecord(property.containingTypeName(), it) } }
+        val constructorProperties =
+            collectDescendantsOfType<KtParameter>()
+                .filterNot { it.hasModifier(KtTokens.PRIVATE_KEYWORD) }
+                .filter { it.hasValOrVar() }
+                .mapNotNull { parameter -> parameter.name?.let { KotlinPropertyRecord(parameter.containingTypeName(), it) } }
+        return declaredProperties + constructorProperties
     }
 
     /**
-     * Consumes a line comment while preserving line boundaries.
+     * Groups Kotlin property names by containing type.
      */
-    private fun consumeLineComment(
-        source: String,
-        start: Int,
-        output: StringBuilder,
-    ): Int {
-        var index = start
-        while (index < source.length && source[index] != '\n') {
-            output.append(' ')
-            index++
-        }
-        return index
-    }
+    private fun List<KotlinPropertyRecord>.groupByOwner(): Map<String, Set<String>> =
+        groupBy { it.ownerName ?: TOP_LEVEL_OWNER }
+            .mapValues { (_, properties) -> properties.map { it.name }.toSet() }
 
     /**
-     * Consumes a block comment while preserving line boundaries.
+     * Finds the nearest containing Kotlin class or object name.
      */
-    private fun consumeBlockComment(
-        source: String,
-        start: Int,
-        output: StringBuilder,
-    ): Int {
-        var index = start
-        while (index < source.length) {
-            val character = source[index]
-            output.append(if (character == '\n') '\n' else ' ')
-            if (source.startsWith("*/", index)) {
-                output.append(' ')
-                return index + 2
+    private fun KtElement.containingTypeName(): String? {
+        var current = parent
+        while (current != null) {
+            when (current) {
+                is KtClass -> return current.name
+                is KtObjectDeclaration -> return current.name
             }
-            index++
+            current = current.parent
         }
-        return index
+        return null
     }
 
     /**
-     * Consumes a quoted literal while preserving line boundaries.
+     * Maps JavaBean accessor method names to implied Kotlin property names by containing type.
      */
-    private fun consumeQuoted(
-        source: String,
-        start: Int,
-        output: StringBuilder,
-        quote: Char,
-    ): Int {
-        var index = start
-        output.append(' ')
-        index++
-        var escaped = false
-        while (index < source.length) {
-            val character = source[index]
-            output.append(if (character == '\n') '\n' else ' ')
-            if (!escaped && character == quote) {
-                return index + 1
+    private fun List<MethodDeclaration>.javaBeanAccessorPropertyNamesByOwner(): Map<String, Map<String, Set<String>>> =
+        mapNotNull { method ->
+            val ownerName = method.containingTypeName() ?: return@mapNotNull null
+            val propertyNames = method.javaBeanAccessorPropertyNames().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            JavaBeanAccessorRecord(ownerName, method.nameAsString, propertyNames)
+        }.groupBy { it.ownerName }
+            .mapValues { (_, accessors) -> accessors.associate { it.methodName to it.propertyNames } }
+
+    /**
+     * Finds the nearest containing Java type declaration name.
+     */
+    private fun MethodDeclaration.containingTypeName(): String? {
+        var current: Node? = parentNode.orElse(null)
+        while (current != null) {
+            when (current) {
+                is ClassOrInterfaceDeclaration -> return current.nameAsString
+                is RecordDeclaration -> return current.nameAsString
+                is EnumDeclaration -> return current.nameAsString
             }
-            escaped = !escaped && character == '\\'
-            if (escaped && character != '\\') {
-                escaped = false
-            }
-            index++
+            current = current.parentNode.orElse(null)
         }
-        return index
+        return null
     }
+
+    /**
+     * Flattens owner-scoped accessor mappings into the legacy method-name mapping.
+     */
+    private fun Map<String, Map<String, Set<String>>>.flattenValues(): Map<String, Set<String>> =
+        values
+            .flatMap { it.entries }
+            .groupBy({ it.key }, { it.value })
+            .mapValues { (_, propertySets) -> propertySets.flatten().toSet() }
+
+    /**
+     * Returns possible Kotlin property names for a JavaBean accessor method when the signature matches.
+     */
+    private fun MethodDeclaration.javaBeanAccessorPropertyNames(): Set<String> =
+        when {
+            nameAsString.startsWith(GETTER_PREFIX) && parameters.isEmpty() ->
+                nameAsString
+                    .removePrefix(GETTER_PREFIX)
+                    .takeIf { it.hasBeanPropertyStem() }
+                    ?.let { setOf(it.decapitalizeBeanProperty()) }
+                    .orEmpty()
+            nameAsString.startsWith(SETTER_PREFIX) && parameters.size == SETTER_PARAMETER_COUNT ->
+                nameAsString
+                    .removePrefix(SETTER_PREFIX)
+                    .takeIf { it.hasBeanPropertyStem() }
+                    ?.let { setOf(it.decapitalizeBeanProperty()) }
+                    .orEmpty()
+            nameAsString.startsWith(BOOLEAN_GETTER_PREFIX) && parameters.isEmpty() ->
+                nameAsString
+                    .removePrefix(BOOLEAN_GETTER_PREFIX)
+                    .takeIf { it.hasBeanPropertyStem() }
+                    ?.let { setOf(nameAsString, it.decapitalizeBeanProperty()) }
+                    .orEmpty()
+            else -> emptySet()
+        }
+
+    /**
+     * Returns whether this string can be a JavaBean property suffix.
+     */
+    private fun String.hasBeanPropertyStem(): Boolean = isNotEmpty() && first().isUpperCase()
+
+    /**
+     * Applies JavaBeans-style decapitalization to a getter/setter suffix.
+     */
+    private fun String.decapitalizeBeanProperty(): String =
+        if (length > 1 && this[0].isUpperCase() && this[1].isUpperCase()) {
+            this
+        } else {
+            replaceFirstChar { it.lowercaseChar() }
+        }
+
+    /**
+     * Returns whether this call is a direct `TODO()` call.
+     */
+    private fun KtCallExpression.isTodoCall(): Boolean = calleeExpression?.text == TODO_CALL_NAME
+
+    /**
+     * Returns whether this class declaration is an interface.
+     */
+    private fun KtClass.isInterfaceClass(): Boolean = isInterface() || text.trimStart().startsWith(INTERFACE_PREFIX)
+
+    /**
+     * Returns whether this class declaration is an enum class.
+     */
+    private fun KtClass.isEnumClass(): Boolean =
+        isEnum() || hasModifier(KtTokens.ENUM_KEYWORD) || text.trimStart().startsWith(ENUM_CLASS_PREFIX)
+
+    /**
+     * Returns whether this postfix expression is Kotlin's not-null assertion operator.
+     */
+    private fun KtPostfixExpression.isNotNullAssertion(): Boolean = operationReference.text == NOT_NULL_ASSERTION_OPERATOR
+
+    /**
+     * Returns whether any value argument contains a not-null assertion.
+     */
+    private fun KtCallExpression.hasNotNullArgument(): Boolean =
+        valueArguments.any { argument ->
+            val expression = argument.getArgumentExpression()
+            if (expression is KtPostfixExpression && expression.isNotNullAssertion()) {
+                return@any true
+            }
+            expression?.collectDescendantsOfType<KtPostfixExpression>()?.any { it.isNotNullAssertion() } == true
+        }
+
+    /**
+     * Returns whether this type node is exactly `Any?`.
+     */
+    private fun KtNullableType.isAnyNullable(): Boolean = innerType?.text == ANY_TYPE_NAME
+
+    /**
+     * Returns whether this qualified expression is a Java interop leftover.
+     */
+    private fun KtDotQualifiedExpression.isJavaInteropReference(): Boolean {
+        val receiver = receiverExpression.text
+        val selector = selectorExpression?.text.orEmpty()
+        val isClassForName = receiver == JAVA_LANG_CLASS_NAME && selector.startsWith(CLASS_FOR_NAME_SELECTOR)
+        val isClassLiteral = selector == JAVA_CLASS_SELECTOR && receiver.endsWith(KOTLIN_CLASS_REFERENCE_SUFFIX)
+        return receiver.endsWithAny(JAVA_INTEROP_QUALIFIER_SUFFIXES) || isClassForName || isClassLiteral
+    }
+
+    /**
+     * Returns whether this call is a Java-style getter or setter invoked through a receiver.
+     */
+    private fun KtCallExpression.isGetterSetterCall(): Boolean {
+        val callee = calleeExpression?.text ?: return false
+        return parent.isQualifiedSelector(this) && callee.isGetterOrSetterName()
+    }
+
+    /**
+     * Returns whether this parent uses [call] as a normal or safe-call selector.
+     */
+    private fun PsiElement?.isQualifiedSelector(call: KtCallExpression): Boolean =
+        when (this) {
+            is KtDotQualifiedExpression -> selectorExpression == call
+            is KtSafeQualifiedExpression -> selectorExpression == call
+            else -> false
+        }
+
+    /**
+     * Returns whether this binary expression matches `nullable?.flag != true`.
+     */
+    private fun KtBinaryExpression.isNullableBooleanComparison(): Boolean =
+        operationReference.text == NOT_EQUALS_OPERATOR &&
+            right?.text == TRUE_LITERAL &&
+            left?.containsSafeQualifiedExpression() == true
+
+    /**
+     * Returns whether this expression is or contains a safe-qualified expression.
+     */
+    private fun KtExpression.containsSafeQualifiedExpression(): Boolean =
+        this is KtSafeQualifiedExpression || collectDescendantsOfType<KtSafeQualifiedExpression>().isNotEmpty()
+
+    /**
+     * Returns whether a `val` initializer eagerly reads from a getter-like expression.
+     */
+    private fun KtProperty.isEagerPropertyInitialization(): Boolean {
+        if (isVar) {
+            return false
+        }
+        val initializer = initializer ?: return false
+        return initializer.isCallThenPropertyRead() || initializer.isGetterLikeCall()
+    }
+
+    /**
+     * Returns whether this expression has the shape `buildValue().property`.
+     */
+    private fun KtExpression.isCallThenPropertyRead(): Boolean =
+        this is KtDotQualifiedExpression && receiverExpression is KtCallExpression && selectorExpression !is KtCallExpression
+
+    /**
+     * Returns whether this expression is a getter-like call such as `getValue()` or `source.getValue()`.
+     */
+    private fun KtExpression.isGetterLikeCall(): Boolean =
+        when (this) {
+            is KtCallExpression -> calleeExpression?.text?.isGetterName() == true
+            is KtDotQualifiedExpression -> (selectorExpression as? KtCallExpression)?.calleeExpression?.text?.isGetterName() == true
+            else -> false
+        }
+
+    /**
+     * Returns whether this method name is a Java-style getter or setter.
+     */
+    private fun String.isGetterOrSetterName(): Boolean = isGetterName() || isSetterName()
+
+    /**
+     * Returns whether this method name is a Java-style getter.
+     */
+    private fun String.isGetterName(): Boolean =
+        startsWith(GETTER_PREFIX) && length > GETTER_PREFIX.length && this[GETTER_PREFIX.length].isUpperCase()
+
+    /**
+     * Returns whether this method name is a Java-style setter.
+     */
+    private fun String.isSetterName(): Boolean =
+        startsWith(SETTER_PREFIX) && length > SETTER_PREFIX.length && this[SETTER_PREFIX.length].isUpperCase()
+
+    /**
+     * Returns whether this string contains any marker, ignoring case.
+     */
+    private fun String.containsAny(markers: Set<String>): Boolean = markers.any { contains(it, ignoreCase = true) }
+
+    /**
+     * Returns whether this string ends with any suffix.
+     */
+    private fun String.endsWithAny(suffixes: Set<String>): Boolean = suffixes.any { endsWith(it) }
 
     private companion object {
-        private val JAVA_PACKAGE_REGEX = Regex("""(?m)^\s*package\s+([A-Za-z_][\w.]*)\s*;""")
-        private val KOTLIN_PACKAGE_REGEX = Regex("""(?m)^\s*package\s+([A-Za-z_][\w.]*)""")
-        private val JAVA_DECLARATION_REGEX = Regex("""\b(class|interface|enum|record)\s+([A-Za-z_]\w*)""")
-        private val JAVA_METHOD_REGEX =
-            Regex(
-                """\b(?:public|protected|private|static|final|synchronized|abstract|native|\s)+[A-Za-z_][\w<>\[\],.? ]+\s+([A-Za-z_]\w*)\s*\([^;{}]*\)\s*(?:throws\s+[^{]+)?\{""",
+        private const val ANY_TYPE_NAME = "Any"
+        private const val BOOLEAN_GETTER_PREFIX = "is"
+        private const val CLASS_FOR_NAME_SELECTOR = "forName"
+        private const val ENUM_CLASS_PREFIX = "enum class "
+        private const val GETTER_PREFIX = "get"
+        private const val INTERFACE_PREFIX = "interface "
+        private const val JAVA_CLASS_SELECTOR = "java"
+        private const val JAVA_LANG_CLASS_NAME = "Class"
+        private const val KOTLIN_CLASS_REFERENCE_SUFFIX = "::class"
+        private const val KOTLIN_SYNTHETIC_FILE_NAME = "Source.kt"
+        private const val KOTLIN_SYNTHETIC_MODULE_NAME = "j2k-eval"
+        private const val NOT_EQUALS_OPERATOR = "!="
+        private const val NOT_NULL_ASSERTION_OPERATOR = "!!"
+        private const val SETTER_PARAMETER_COUNT = 1
+        private const val SETTER_PREFIX = "set"
+        private const val TODO_CALL_NAME = "TODO"
+        private const val TOP_LEVEL_OWNER = "<top-level>"
+        private const val TRUE_LITERAL = "true"
+
+        private val JAVA_INTEROP_QUALIFIER_SUFFIXES =
+            setOf(
+                "Arrays",
+                "Collections",
+                "Objects",
+                "Optional",
             )
-        private val KOTLIN_DECLARATION_REGEX =
-            Regex("""\b(enum\s+class|data\s+class|sealed\s+class|class|interface|object)\s+([A-Za-z_]\w*)""")
-        private val KOTLIN_CLASS_DECLARATIONS = setOf("class", "data class", "sealed class")
-        private val KOTLIN_FUNCTION_REGEX = Regex("""\bfun\s+([A-Za-z_]\w*)\s*\(""")
-        private val TODO_REGEX = Regex("""\bTODO\s*\(""")
-        private val NOT_NULL_ASSERTION_REGEX = Regex("""!!""")
-        private val NOT_NULL_IN_CALL_REGEX = Regex("""\b[A-Za-z_]\w*\s*\([^)]*!![^)]*\)""")
-        private val ANY_NULLABLE_REGEX = Regex("""\bAny\?""")
-        private val UNRESOLVED_IMPORT_REGEX =
-            Regex("""(?m)^\s*import\s+.*(?:unresolved|missing|nonexistent).*""", RegexOption.IGNORE_CASE)
-        private val JAVA_INTEROP_REGEX =
-            Regex("""\b(?:Arrays\.|Collections\.|Objects\.|Optional[.<]|Class\.forName|::class\.java|\.class\b)""")
-        private val GETTER_SETTER_CALL_REGEX = Regex("""\.\s*(?:get|set)[A-Z]\w*\s*\(""")
-        private val NULLABLE_BOOLEAN_REGEX = Regex("""\?\.[A-Za-z_]\w*\s*!=\s*true""")
-        private val EAGER_PROPERTY_REGEX =
-            Regex(
-                """(?m)^\s*val\s+[A-Za-z_]\w*(?:\s*:[^=]+)?\s*=\s*(?:[A-Za-z_]\w*\([^)]*\)\.[A-Za-z_]\w*|(?:[A-Za-z_]\w*\.)?get[A-Z]\w*\()""",
-            )
-        private val CONTROL_KEYWORDS = setOf("if", "for", "while", "switch", "catch", "return", "new")
+        private val UNRESOLVED_IMPORT_MARKERS = setOf("unresolved", "missing", "nonexistent")
     }
 }
+
+/**
+ * Kotlin property name with its nearest containing type, if any.
+ */
+private data class KotlinPropertyRecord(
+    val ownerName: String?,
+    val name: String,
+)
+
+/**
+ * JavaBean accessor mapping with its nearest containing Java type.
+ */
+private data class JavaBeanAccessorRecord(
+    val ownerName: String,
+    val methodName: String,
+    val propertyNames: Set<String>,
+)
 
 /**
  * Structural data extracted from one source file.
@@ -303,6 +567,10 @@ data class SourceStructure(
     val objectNames: Set<String>,
     val topLevelNames: Set<String>,
     val functionNames: Set<String>,
+    val propertyNames: Set<String>,
+    val propertyNamesByOwner: Map<String, Set<String>>,
+    val javaBeanAccessorPropertyNames: Map<String, Set<String>>,
+    val javaBeanAccessorPropertyNamesByOwner: Map<String, Map<String, Set<String>>>,
     val publicApiNames: Set<String>,
 ) {
     /**
