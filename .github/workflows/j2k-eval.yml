@@ -74,7 +74,7 @@ jobs:
       - name: Run evaluator
         shell: bash
         run: |
-          ./gradlew --no-daemon run --args="evaluate --config ${{ matrix.config }}"
+          ./gradlew --no-daemon run --args="evaluate --config ${{ matrix.config }} --github-summary $GITHUB_STEP_SUMMARY"
 
       - name: Upload conversion and evaluation reports
         if: always()

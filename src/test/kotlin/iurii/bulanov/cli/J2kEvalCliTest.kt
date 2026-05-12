@@ -38,6 +38,7 @@ class J2kEvalCliTest {
         assertContains(result.output, "--report-dir")
         assertContains(result.output, "--conversion-report")
         assertContains(result.output, "--checkout-report")
+        assertContains(result.output, "--github-summary")
     }
 
     @Test

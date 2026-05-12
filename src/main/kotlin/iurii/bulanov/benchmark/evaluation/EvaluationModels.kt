@@ -13,6 +13,7 @@ data class EvaluationRequest(
     val reportDirectory: Path?,
     val conversionReport: Path? = null,
     val checkoutReport: Path? = null,
+    val githubSummaryPath: Path? = null,
 )
 
 /**

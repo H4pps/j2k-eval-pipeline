@@ -112,6 +112,7 @@ private class EvaluateCliktCommand(
     private val reportDirectoryPath by option("--report-dir", help = "Evaluator report output directory").path()
     private val conversionReportPath by option("--conversion-report", help = "J2K conversion JSON report path").path()
     private val checkoutReportPath by option("--checkout-report", help = "Benchmark checkout JSON report path").path()
+    private val githubSummaryPath by option("--github-summary", help = "Path to GitHub step summary output").path()
 
     /**
      * Executes evaluator metric calculation and report generation through [EvaluatorRunner].
@@ -125,6 +126,7 @@ private class EvaluateCliktCommand(
                     reportDirectory = reportDirectoryPath,
                     conversionReport = conversionReportPath,
                     checkoutReport = checkoutReportPath,
+                    githubSummaryPath = githubSummaryPath,
                 ),
             )
         if (exitCode != 0) {

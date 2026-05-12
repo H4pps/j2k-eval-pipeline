@@ -4,8 +4,13 @@ import iurii.bulanov.benchmark.config.BenchmarkConfigParser
 import iurii.bulanov.logging.JsonLineLogger
 import iurii.bulanov.logging.StructuredLogger
 import iurii.bulanov.source.SourceFileDiscovery
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import kotlin.io.path.appendText
+import kotlin.io.path.exists
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 /**
  * Runs evaluator metric calculation independently from CLI parsing.
@@ -26,6 +31,7 @@ class EvaluatorRunner(
         return try {
             val result = evaluate(request)
             reportWriter.write(result)
+            request.githubSummaryPath?.let { writeGitHubSummary(it, result) }
             logEvaluationCompleted(result)
             0
         } catch (exception: Exception) {
@@ -119,6 +125,39 @@ class EvaluatorRunner(
                 "status" to result.status.name.lowercase(),
             ),
         )
+    }
+
+    /**
+     * Appends the generated Markdown evaluation report to the GitHub Actions step summary.
+     */
+    private fun writeGitHubSummary(
+        path: Path,
+        result: EvaluationResult,
+    ) {
+        ensureWritableFile(path)
+        val summaryPath = result.reportDirectory.resolve("summary.md")
+        path.appendText(
+            buildString {
+                appendLine()
+                appendLine("---")
+                appendLine()
+                append(summaryPath.readText())
+            },
+        )
+        logger.info(
+            "github_summary_written",
+            mapOf("path" to path.toString(), "benchmark_id" to result.config.id, "source" to summaryPath.toString()),
+        )
+    }
+
+    /**
+     * Ensures that a file and its parent directory exist before appending text.
+     */
+    private fun ensureWritableFile(path: Path) {
+        if (!path.exists()) {
+            Files.createDirectories(path.parent ?: Path.of("."))
+            path.writeText("")
+        }
     }
 
     /**
