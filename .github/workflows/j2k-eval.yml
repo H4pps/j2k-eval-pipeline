@@ -31,6 +31,7 @@ jobs:
   j2k-eval:
     name: Convert and evaluate ${{ matrix.config }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +54,9 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Install virtual display
         shell: bash
         run: |
@@ -65,13 +69,13 @@ jobs:
           ./gradlew --no-daemon run --args="checkout-benchmark --config ${{ matrix.config }} --github-summary $GITHUB_STEP_SUMMARY --github-output $GITHUB_OUTPUT"
 
       - name: Run static J2K conversion
+        timeout-minutes: 30
         shell: bash
         run: |
+          set -o pipefail
           mkdir -p build/j2k/${{ matrix.benchmark }}/logs
-          if ! xvfb-run -a ./gradlew --no-daemon convertBenchmark -PbenchmarkConfig=${{ matrix.config }} > build/j2k/${{ matrix.benchmark }}/logs/gradle-convert.log 2>&1; then
-            tail -200 build/j2k/${{ matrix.benchmark }}/logs/gradle-convert.log
-            exit 1
-          fi
+          xvfb-run -a ./gradlew --no-daemon --console=plain --stacktrace convertBenchmark -PbenchmarkConfig=${{ matrix.config }} 2>&1 \
+            | tee build/j2k/${{ matrix.benchmark }}/logs/gradle-convert.log
 
       - name: Run evaluator
         shell: bash
