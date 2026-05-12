@@ -59,6 +59,7 @@ tasks.named<JavaExec>("runIde") {
     jvmArgumentProviders.add(
         CommandLineArgumentProvider {
             listOf(
+                "-Djava.awt.headless=true",
                 "-Didea.kotlin.plugin.use.k2=false",
                 "-DbytecodeAnalysis.index.enabled=false",
             )
