@@ -177,6 +177,7 @@ class EvaluationReportWriter(
         appendLine("### Structural Name Differences")
         appendLine()
         appendLine("These name lists are heuristic; Java getters may become Kotlin properties.")
+        appendNameList("Java classes/records converted to Kotlin objects", structure.nameDiffs.classLikeToObjectNames)
         appendNameDiff(
             "Classes and records",
             "Java classes/records missing in Kotlin",
@@ -477,6 +478,7 @@ class EvaluationReportWriter(
             "interfaces" to nameDiffJson(nameDiffs.interfaces),
             "enums" to nameDiffJson(nameDiffs.enums),
             "objects" to nameDiffJson(nameDiffs.objects),
+            "class_like_to_object_names" to nameDiffs.classLikeToObjectNames,
             "functions" to nameDiffJson(nameDiffs.functions),
         )
 

@@ -167,12 +167,17 @@ class EvaluationMetricsCalculator(
     private fun structuralNameDiffs(
         javaStructures: List<SourceStructure>,
         kotlinStructures: List<SourceStructure>,
-    ): StructuralNameDiffs =
-        StructuralNameDiffs(
+    ): StructuralNameDiffs {
+        val javaClassLikeNames = javaStructures.flatMap { it.classLikeNames }.toSet()
+        val kotlinClassLikeNames = kotlinStructures.flatMap { it.classLikeNames }.toSet()
+        val kotlinObjectNames = kotlinStructures.flatMap { it.objectNames }.toSet()
+        val classLikeToObjectNames = javaClassLikeNames.intersect(kotlinObjectNames).sorted()
+
+        return StructuralNameDiffs(
             classLike =
                 nameDiff(
-                    javaStructures.flatMap { it.classLikeNames },
-                    kotlinStructures.flatMap { it.classLikeNames },
+                    javaClassLikeNames.minus(classLikeToObjectNames),
+                    kotlinClassLikeNames,
                 ),
             interfaces =
                 nameDiff(
@@ -187,21 +192,23 @@ class EvaluationMetricsCalculator(
             objects =
                 nameDiff(
                     emptyList(),
-                    kotlinStructures.flatMap { it.objectNames },
+                    kotlinObjectNames.minus(classLikeToObjectNames),
                 ),
+            classLikeToObjectNames = classLikeToObjectNames,
             functions =
                 nameDiff(
                     javaStructures.flatMap { it.functionNames },
                     kotlinStructures.flatMap { it.functionNames },
                 ),
         )
+    }
 
     /**
      * Builds a deterministic two-way name diff.
      */
     private fun nameDiff(
-        javaNames: List<String>,
-        kotlinNames: List<String>,
+        javaNames: Collection<String>,
+        kotlinNames: Collection<String>,
     ): StructuralNameDiff {
         val javaSet = javaNames.toSet()
         val kotlinSet = kotlinNames.toSet()

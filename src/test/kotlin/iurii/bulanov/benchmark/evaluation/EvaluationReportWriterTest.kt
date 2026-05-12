@@ -51,6 +51,8 @@ class EvaluationReportWriterTest {
         assertContains(summary, "Kotlin-only API names: `1`")
         assertContains(summary, "`MissingClass`")
         assertContains(summary, "`newHelper`")
+        assertContains(summary, "Java classes/records converted to Kotlin objects")
+        assertContains(summary, "`Utility`")
         assertContains(summary, "#### Classes and records")
         assertContains(summary, "Java classes/records missing in Kotlin")
         assertContains(summary, "#### Methods and functions")
@@ -230,6 +232,7 @@ class EvaluationReportWriterTest {
                     interfaces = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
                     enums = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
                     objects = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
+                    classLikeToObjectNames = listOf("Utility"),
                     functions = StructuralNameDiff(missingInKotlin = listOf("App"), kotlinOnly = listOf("newHelper")),
                 ),
         )
@@ -243,6 +246,7 @@ class EvaluationReportWriterTest {
             interfaces = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
             enums = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
             objects = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
+            classLikeToObjectNames = emptyList(),
             functions = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
         )
 

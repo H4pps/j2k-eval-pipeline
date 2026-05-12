@@ -147,6 +147,7 @@ data class StructuralNameDiffs(
     val interfaces: StructuralNameDiff,
     val enums: StructuralNameDiff,
     val objects: StructuralNameDiff,
+    val classLikeToObjectNames: List<String>,
     val functions: StructuralNameDiff,
 )
 
