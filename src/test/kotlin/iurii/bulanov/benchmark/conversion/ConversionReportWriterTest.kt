@@ -15,8 +15,8 @@ class ConversionReportWriterTest {
     fun `renders deterministic conversion json`() {
         val report =
             ConversionReport(
-                config = testConfig("sample"),
-                status = ConversionStatus.COMPLETED_WITH_WARNINGS,
+                config = testConfig(),
+                status = ConversionStatus.PARTIAL,
                 sourceJavaFileCount = 2,
                 generatedKotlinFileCount = 1,
                 paths =
@@ -28,24 +28,25 @@ class ConversionReportWriterTest {
                     ),
                 converterCommand = listOf("j2k-convert", "--config", "benchmarks/sample.yml"),
                 warnings = listOf("sample warning"),
-                errors = emptyList(),
+                errors = listOf("src/main/java/Sample.java: converter failed"),
             )
 
         val json = ConversionReportWriter().renderJson(report)
 
         assertContains(json, "\"id\":\"sample\"")
-        assertContains(json, "\"status\":\"completed_with_warnings\"")
+        assertContains(json, "\"status\":\"partial\"")
         assertContains(json, "\"source_java_file_count\":2")
         assertContains(json, "\"generated_kotlin_file_count\":1")
         assertContains(json, "\"warnings\":[\"sample warning\"]")
+        assertContains(json, "\"errors\":[\"src/main/java/Sample.java: converter failed\"]")
     }
 
     /**
      * Builds a minimal benchmark config for report rendering tests.
      */
-    private fun testConfig(id: String): BenchmarkConfig =
+    private fun testConfig(): BenchmarkConfig =
         BenchmarkConfig(
-            id = id,
+            id = "sample",
             name = "Sample",
             role = "primary",
             description = "sample",
@@ -56,7 +57,7 @@ class ConversionReportWriterTest {
                     ref = "abc123",
                     branch = "main",
                 ),
-            checkout = CheckoutConfig(directory = "build/benchmarks/$id/source"),
+            checkout = CheckoutConfig(directory = "build/benchmarks/sample/source"),
             java = JavaConfig(sourceRoots = listOf("src/main/java")),
             build = BuildConfig(tool = "maven", workingDirectory = ".", commands = listOf("mvn test")),
         )

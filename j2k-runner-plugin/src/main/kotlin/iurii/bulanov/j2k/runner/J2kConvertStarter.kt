@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 package iurii.bulanov.j2k.runner
 
 import com.intellij.codeInsight.DefaultInferredAnnotationProvider
@@ -128,18 +130,21 @@ class J2kConvertStarter : ApplicationStarter {
                     "copied_file_count" to stagingResult.copiedFileCount,
                 ),
             )
-            val convertedFiles = runJ2k(config, paths, javaFiles.size)
+            val j2kResult = runJ2k(config, paths, javaFiles.size)
+            warnings += j2kResult.warnings
+            errors += j2kResult.errors
             log(
                 paths,
                 "conversion_j2k_completed",
                 mapOf(
                     "benchmark_id" to config.id,
-                    "converted_file_count" to convertedFiles.size,
+                    "converted_file_count" to j2kResult.convertedFiles.size,
+                    "failed_file_count" to j2kResult.errors.size,
                 ),
             )
             val collection =
-                if (convertedFiles.isNotEmpty()) {
-                    generatedKotlinCollector.writeConvertedFiles(paths.generatedKotlinDirectory, convertedFiles)
+                if (j2kResult.convertedFiles.isNotEmpty()) {
+                    generatedKotlinCollector.writeConvertedFiles(paths.generatedKotlinDirectory, j2kResult.convertedFiles)
                 } else {
                     warnings += "J2K returned no direct file map; collecting Kotlin files from staged source tree."
                     generatedKotlinCollector.collectFromStaging(
@@ -159,7 +164,12 @@ class J2kConvertStarter : ApplicationStarter {
                 ),
             )
 
-            val status = if (warnings.isEmpty()) ConversionStatus.COMPLETED else ConversionStatus.COMPLETED_WITH_WARNINGS
+            val status =
+                when {
+                    errors.isNotEmpty() -> ConversionStatus.PARTIAL
+                    warnings.isNotEmpty() -> ConversionStatus.COMPLETED_WITH_WARNINGS
+                    else -> ConversionStatus.COMPLETED
+                }
             reportWriter.write(
                 ConversionReport(
                     config = config,
@@ -224,7 +234,7 @@ class J2kConvertStarter : ApplicationStarter {
         config: BenchmarkConfig,
         paths: ConversionPaths,
         sourceJavaFileCount: Int,
-    ): Map<Path, String> {
+    ): J2kRunResult {
         val project = createProject(config, paths.stagingDirectory)
         return try {
             log(paths, "conversion_project_created", mapOf("benchmark_id" to config.id, "project_name" to project.name))
@@ -258,45 +268,133 @@ class J2kConvertStarter : ApplicationStarter {
                 javaFiles.associateWith { javaFile ->
                     relativeSourcePath(paths.stagingDirectory, config.java.sourceRoots, Path.of(javaFile.virtualFile.path))
                 }
-            val extension = OldJ2kConverterExtension()
-            val converter = extension.createJavaToKotlinConverter(project, module, BASIC_CONVERTER_SETTINGS, null)
             val dumbService = DumbService.getInstance(project)
-            val accessToken = dumbService.runWithWaitForSmartModeDisabled()
-            val result =
+            val batchResult =
                 try {
-                    dumbService.computeWithAlternativeResolveEnabled(
-                        ThrowableComputable {
-                            converter.filesToKotlin(
-                                javaFiles,
-                                NoOpPostProcessor,
-                                EmptyProgressIndicator(),
-                                emptyList(),
-                                emptyList(),
-                            )
-                        },
+                    val results = convertJavaFiles(project, module, dumbService, javaFiles)
+                    require(results.size == javaFiles.size) {
+                        "J2K result count mismatch: expected ${javaFiles.size}, found ${results.size}"
+                    }
+                    J2kRunResult(
+                        convertedFiles =
+                            javaFiles
+                                .zip(results)
+                                .associate { (javaFile, kotlinCode) -> relativePaths.getValue(javaFile) to kotlinCode },
+                        warnings = emptyList(),
+                        errors = emptyList(),
                     )
-                } finally {
-                    accessToken.finish()
+                } catch (exception: Throwable) {
+                    exception.rethrowIfFatal()
+                    log(
+                        paths,
+                        "conversion_j2k_batch_failed",
+                        mapOf(
+                            "benchmark_id" to config.id,
+                            "error" to exception.describe(),
+                            "stack_trace" to exception.stackTraceToString(),
+                        ),
+                    )
+                    convertFilesIndividually(
+                        project = project,
+                        module = module,
+                        dumbService = dumbService,
+                        javaFiles = javaFiles,
+                        relativePaths = relativePaths,
+                        paths = paths,
+                        config = config,
+                        batchFailure = exception,
+                    )
                 }
             ApplicationManager.getApplication().invokeAndWait {
                 FileDocumentManager.getInstance().saveAllDocuments()
             }
-
-            require(result.results.size == javaFiles.size) {
-                "J2K result count mismatch: expected ${javaFiles.size}, found ${result.results.size}"
-            }
-            javaFiles
-                .zip(result.results)
-                .associate { (javaFile, kotlinCode) -> relativePaths.getValue(javaFile) to kotlinCode }
+            batchResult
         } finally {
             closeProject(project)
         }
     }
 
     /**
+     * Converts a group of Java PSI files with a fresh old-J2K converter instance.
+     */
+    private fun convertJavaFiles(
+        project: Project,
+        module: Module,
+        dumbService: DumbService,
+        javaFiles: List<PsiJavaFile>,
+    ): List<String> {
+        val converter = OldJ2kConverterExtension().createJavaToKotlinConverter(project, module, BASIC_CONVERTER_SETTINGS, null)
+        val accessToken = dumbService.runWithWaitForSmartModeDisabled()
+        return try {
+            dumbService.computeWithAlternativeResolveEnabled(
+                ThrowableComputable {
+                    converter
+                        .filesToKotlin(
+                            javaFiles,
+                            NoOpPostProcessor,
+                            EmptyProgressIndicator(),
+                            emptyList(),
+                            emptyList(),
+                        ).results
+                },
+            )
+        } finally {
+            accessToken.finish()
+        }
+    }
+
+    /**
+     * Retries conversion one file at a time so converter bugs become evaluation data.
+     */
+    private fun convertFilesIndividually(
+        project: Project,
+        module: Module,
+        dumbService: DumbService,
+        javaFiles: List<PsiJavaFile>,
+        relativePaths: Map<PsiJavaFile, Path>,
+        paths: ConversionPaths,
+        config: BenchmarkConfig,
+        batchFailure: Throwable,
+    ): J2kRunResult {
+        val convertedFiles = linkedMapOf<Path, String>()
+        val errors = mutableListOf<String>()
+        val sortedJavaFiles = javaFiles.sortedBy { relativePaths.getValue(it).toString() }
+
+        sortedJavaFiles.forEach { javaFile ->
+            val relativePath = relativePaths.getValue(javaFile)
+            try {
+                val results = convertJavaFiles(project, module, dumbService, listOf(javaFile))
+                require(results.size == 1) {
+                    "J2K per-file result count mismatch: expected 1, found ${results.size}"
+                }
+                convertedFiles[relativePath] = results.single()
+            } catch (exception: Throwable) {
+                exception.rethrowIfFatal()
+                val error = "$relativePath: ${exception.describe()}"
+                errors += error
+                log(
+                    paths,
+                    "conversion_j2k_file_failed",
+                    mapOf(
+                        "benchmark_id" to config.id,
+                        "relative_path" to relativePath.toString(),
+                        "error" to exception.describe(),
+                        "stack_trace" to exception.stackTraceToString(),
+                    ),
+                )
+            }
+        }
+
+        return J2kRunResult(
+            convertedFiles = convertedFiles,
+            warnings = listOf("Batch J2K failed; retried conversion per file. Batch error: ${batchFailure.describe()}"),
+            errors = errors,
+        )
+    }
+
+    /**
      * Creates a disposable project rooted at the staged benchmark source tree.
      */
-    @Suppress("DEPRECATION", "DEPRECATION_ERROR", "removal")
     private fun createProject(
         config: BenchmarkConfig,
         stagingDirectory: Path,
@@ -318,7 +416,7 @@ class J2kConvertStarter : ApplicationStarter {
      * default provider may call bytecode-analysis indexes before the headless project becomes
      * smart, so the runner disables that provider and keeps explicit source annotations only.
      */
-    @Suppress("DEPRECATION", "removal")
+    @Suppress("DEPRECATION")
     private fun disableIndexBackedInferredAnnotations(project: Project): Int {
         val extensionPoint = InferredAnnotationProvider.EP_NAME.getPoint(project)
         val providersToRemove = extensionPoint.extensionList.filterIsInstance<DefaultInferredAnnotationProvider>()
@@ -476,6 +574,15 @@ class J2kConvertStarter : ApplicationStarter {
     }
 
     /**
+     * Rethrows JVM-level fatal failures while keeping converter assertions reportable.
+     */
+    private fun Throwable.rethrowIfFatal() {
+        if (this is ThreadDeath || this is VirtualMachineError || this is InterruptedException) {
+            throw this
+        }
+    }
+
+    /**
      * Resolves conversion output paths against the repository root.
      */
     private fun ConversionPaths.resolveAgainst(harnessRoot: Path): ConversionPaths =
@@ -486,6 +593,15 @@ class J2kConvertStarter : ApplicationStarter {
             logsDirectory = harnessRoot.resolve(logsDirectory).normalize(),
         )
 }
+
+/**
+ * Raw J2K outputs and reportable converter failures for one benchmark.
+ */
+private data class J2kRunResult(
+    val convertedFiles: Map<Path, String>,
+    val warnings: List<String>,
+    val errors: List<String>,
+)
 
 /**
  * Parsed command-line options for the headless J2K runner.

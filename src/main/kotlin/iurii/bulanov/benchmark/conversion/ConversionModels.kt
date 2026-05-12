@@ -47,6 +47,7 @@ data class GeneratedKotlinCollectionResult(
 enum class ConversionStatus {
     COMPLETED,
     COMPLETED_WITH_WARNINGS,
+    PARTIAL,
     FAILED,
 }
 
