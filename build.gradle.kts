@@ -1,3 +1,15 @@
+buildscript {
+    configurations.classpath {
+        resolutionStrategy {
+            // IntelliJ Platform Gradle Plugin 2.16.0 expects the newer kotlinx serialization ABI.
+            force(
+                "org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.11.0",
+                "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.11.0",
+            )
+        }
+    }
+}
+
 plugins {
     kotlin("jvm") version "2.3.20"
     id("dev.detekt") version "2.0.0-alpha.3"
@@ -103,4 +115,10 @@ tasks.jacocoTestCoverageVerification {
 tasks.check {
     dependsOn(tasks.detekt)
     dependsOn(tasks.jacocoTestCoverageVerification)
+}
+
+tasks.register("convertBenchmark") {
+    group = "j2k"
+    description = "Runs static J2K conversion for a benchmark config through the headless IntelliJ runner."
+    dependsOn(":j2k-runner-plugin:runIde")
 }

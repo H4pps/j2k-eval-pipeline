@@ -1,4 +1,13 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
 plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 rootProject.name = "j2k-eval-pipeline"
+
+include("j2k-runner-plugin")
