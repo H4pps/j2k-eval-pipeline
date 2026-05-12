@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly ACT_IMAGE="${ACT_DOCKER_IMAGE:-j2k-eval-act:0.2.88}"
+readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+docker_socket="${DOCKER_HOST:-}"
+if [[ "${docker_socket}" == unix://* ]]; then
+  docker_socket="${docker_socket#unix://}"
+else
+  docker_socket="/var/run/docker.sock"
+fi
+
+if [[ ! -S "${docker_socket}" && -S "${HOME}/.docker/run/docker.sock" ]]; then
+  docker_socket="${HOME}/.docker/run/docker.sock"
+fi
+
+if [[ ! -S "${docker_socket}" ]]; then
+  echo "Docker socket not found. Start Docker Desktop or Docker Engine first." >&2
+  echo "Checked: ${docker_socket}" >&2
+  exit 1
+fi
+
+if ! docker image inspect "${ACT_IMAGE}" >/dev/null 2>&1; then
+  docker build -t "${ACT_IMAGE}" "${REPO_ROOT}/docker/act"
+fi
+
+mkdir -p "${REPO_ROOT}/.act/artifacts"
+
+exec docker run --rm \
+  -e DOCKER_HOST=unix:///var/run/docker.sock \
+  -v "${docker_socket}:/var/run/docker.sock" \
+  -v "${REPO_ROOT}:${REPO_ROOT}" \
+  -w "${REPO_ROOT}" \
+  "${ACT_IMAGE}" "$@"
