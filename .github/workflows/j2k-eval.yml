@@ -53,6 +53,12 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Install virtual display
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
       - name: Validate and checkout benchmark inputs
         shell: bash
         run: |
@@ -62,7 +68,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p build/j2k/${{ matrix.benchmark }}/logs
-          if ! ./gradlew --no-daemon convertBenchmark -PbenchmarkConfig=${{ matrix.config }} > build/j2k/${{ matrix.benchmark }}/logs/gradle-convert.log 2>&1; then
+          if ! xvfb-run -a ./gradlew --no-daemon convertBenchmark -PbenchmarkConfig=${{ matrix.config }} > build/j2k/${{ matrix.benchmark }}/logs/gradle-convert.log 2>&1; then
             tail -200 build/j2k/${{ matrix.benchmark }}/logs/gradle-convert.log
             exit 1
           fi
