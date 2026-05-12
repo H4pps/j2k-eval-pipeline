@@ -62,6 +62,64 @@ class EvaluatorRunnerTest {
         assertContains(json, "\"kotlin_file_count\":1")
     }
 
+    @Test
+    fun `evaluator warns when generated kotlin file is missing`() {
+        val benchmarkId = "eval-runner-missing-${System.nanoTime()}"
+        val checkoutDirectory = Path.of("build/benchmarks/$benchmarkId/source")
+        val generatedDirectory = Files.createTempDirectory("generated-kotlin-missing-")
+        val reportDirectory = Files.createTempDirectory("evaluation-report-missing-")
+        checkoutDirectory.resolve("src/main/java/com/example").createDirectories()
+        checkoutDirectory.resolve("src/main/java/com/example/App.java").writeText("package com.example; class App {}")
+        checkoutDirectory.resolve("src/main/java/com/example/Missing.java").writeText("package com.example; class Missing {}")
+        generatedDirectory.resolve("com/example").createDirectories()
+        generatedDirectory.resolve("com/example/App.kt").writeText("package com.example\nclass App")
+        val configPath = writeConfig(benchmarkId, checkoutDirectory)
+
+        val exitCode =
+            EvaluatorRunner(logger = NoopLogger).run(
+                EvaluationRequest(
+                    configPath = configPath,
+                    generatedKotlinDirectory = generatedDirectory,
+                    reportDirectory = reportDirectory,
+                ),
+            )
+
+        val json = reportDirectory.resolve("evaluation.json").readText()
+        assertEquals(0, exitCode)
+        assertContains(json, "\"status\":\"completed_with_warnings\"")
+        assertContains(json, "generated_kotlin_file_missing")
+        assertContains(json, "com/example/Missing.kt")
+    }
+
+    @Test
+    fun `evaluator warns when generated kotlin file is unexpected`() {
+        val benchmarkId = "eval-runner-extra-${System.nanoTime()}"
+        val checkoutDirectory = Path.of("build/benchmarks/$benchmarkId/source")
+        val generatedDirectory = Files.createTempDirectory("generated-kotlin-extra-")
+        val reportDirectory = Files.createTempDirectory("evaluation-report-extra-")
+        checkoutDirectory.resolve("src/main/java/com/example").createDirectories()
+        checkoutDirectory.resolve("src/main/java/com/example/App.java").writeText("package com.example; class App {}")
+        generatedDirectory.resolve("com/example").createDirectories()
+        generatedDirectory.resolve("com/example/App.kt").writeText("package com.example\nclass App")
+        generatedDirectory.resolve("com/example/Extra.kt").writeText("package com.example\nclass Extra")
+        val configPath = writeConfig(benchmarkId, checkoutDirectory)
+
+        val exitCode =
+            EvaluatorRunner(logger = NoopLogger).run(
+                EvaluationRequest(
+                    configPath = configPath,
+                    generatedKotlinDirectory = generatedDirectory,
+                    reportDirectory = reportDirectory,
+                ),
+            )
+
+        val json = reportDirectory.resolve("evaluation.json").readText()
+        assertEquals(0, exitCode)
+        assertContains(json, "\"status\":\"completed_with_warnings\"")
+        assertContains(json, "generated_kotlin_file_unexpected")
+        assertContains(json, "com/example/Extra.kt")
+    }
+
     /**
      * Writes a complete benchmark YAML config for evaluator runner tests.
      */

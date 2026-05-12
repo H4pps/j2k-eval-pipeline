@@ -3,9 +3,11 @@ package iurii.bulanov.benchmark.evaluation
 import iurii.bulanov.benchmark.config.BenchmarkConfigParser
 import iurii.bulanov.logging.JsonLineLogger
 import iurii.bulanov.logging.StructuredLogger
+import iurii.bulanov.source.DiscoveredSourceFile
 import iurii.bulanov.source.SourceFileDiscovery
 import java.nio.file.Path
 import java.nio.file.Paths
+import kotlin.io.path.nameWithoutExtension
 
 /**
  * Runs Phase 2 evaluation independently from CLI parsing.
@@ -37,6 +39,14 @@ class EvaluatorRunner(
                                 code = "generated_kotlin_directory_missing",
                                 message = "Generated Kotlin directory does not exist yet; converter output is expected in a later phase.",
                                 path = generatedKotlinDirectory.toString(),
+                            ),
+                        )
+                    } else {
+                        addAll(
+                            coverageWarnings(
+                                javaFiles = javaFiles,
+                                kotlinFiles = kotlinDiscovery.files,
+                                sourceRoots = config.java.sourceRoots,
                             ),
                         )
                     }
@@ -86,4 +96,57 @@ class EvaluatorRunner(
         benchmarkId: String,
         configuredPath: Path?,
     ): Path = (configuredPath ?: Path.of("build", "reports", "j2k-eval", benchmarkId)).normalize()
+
+    /**
+     * Compares Java inputs with generated Kotlin outputs using the converter output layout.
+     */
+    private fun coverageWarnings(
+        javaFiles: List<DiscoveredSourceFile>,
+        kotlinFiles: List<DiscoveredSourceFile>,
+        sourceRoots: List<String>,
+    ): List<EvaluationWarning> {
+        val expectedKotlinPaths =
+            javaFiles
+                .map { expectedKotlinRelativePath(it.relativePath, sourceRoots) }
+                .toSet()
+        val actualKotlinPaths = kotlinFiles.map { it.relativePath.normalize() }.toSet()
+        val missingKotlinPaths = expectedKotlinPaths.minus(actualKotlinPaths).sortedBy { it.toString() }
+        val unexpectedKotlinPaths = actualKotlinPaths.minus(expectedKotlinPaths).sortedBy { it.toString() }
+
+        val missingWarnings =
+            missingKotlinPaths.map { path ->
+                EvaluationWarning(
+                    code = "generated_kotlin_file_missing",
+                    message = "No generated Kotlin file matched a configured Java input.",
+                    path = path.toString(),
+                )
+            }
+        val unexpectedWarnings =
+            unexpectedKotlinPaths.map { path ->
+                EvaluationWarning(
+                    code = "generated_kotlin_file_unexpected",
+                    message = "Generated Kotlin file does not match any configured Java input.",
+                    path = path.toString(),
+                )
+            }
+        return missingWarnings + unexpectedWarnings
+    }
+
+    /**
+     * Maps a checkout-relative Java path to the generated-output-relative Kotlin path.
+     */
+    private fun expectedKotlinRelativePath(
+        javaRelativePath: Path,
+        sourceRoots: List<String>,
+    ): Path {
+        val normalizedJavaPath = javaRelativePath.normalize()
+        val sourceRootRelativePath =
+            sourceRoots
+                .map { Path.of(it).normalize() }
+                .firstOrNull { normalizedJavaPath.startsWith(it) }
+                ?.relativize(normalizedJavaPath)
+                ?: normalizedJavaPath
+        val kotlinFileName = "${sourceRootRelativePath.nameWithoutExtension}.kt"
+        return sourceRootRelativePath.parent?.resolve(kotlinFileName)?.normalize() ?: Path.of(kotlinFileName)
+    }
 }
