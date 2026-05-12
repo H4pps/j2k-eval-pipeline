@@ -53,6 +53,9 @@ class EvaluationReportWriterTest {
         assertContains(summary, "`newHelper`")
         assertContains(summary, "Java classes/records converted to Kotlin objects")
         assertContains(summary, "`Utility`")
+        assertContains(summary, "full lists are in `evaluation.json` under `structure.name_diffs`")
+        assertContains(summary, "Java bean accessors that may be Kotlin properties")
+        assertContains(summary, "`getTitle`")
         assertContains(summary, "#### Classes and records")
         assertContains(summary, "Java classes/records missing in Kotlin")
         assertContains(summary, "#### Methods and functions")
@@ -233,6 +236,7 @@ class EvaluationReportWriterTest {
                     enums = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
                     objects = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
                     classLikeToObjectNames = listOf("Utility"),
+                    javaBeanAccessorNames = listOf("getTitle"),
                     functions = StructuralNameDiff(missingInKotlin = listOf("App"), kotlinOnly = listOf("newHelper")),
                 ),
         )
@@ -247,6 +251,7 @@ class EvaluationReportWriterTest {
             enums = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
             objects = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
             classLikeToObjectNames = emptyList(),
+            javaBeanAccessorNames = emptyList(),
             functions = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
         )
 

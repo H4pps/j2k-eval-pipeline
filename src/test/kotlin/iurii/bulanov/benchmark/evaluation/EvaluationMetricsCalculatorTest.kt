@@ -7,6 +7,7 @@ import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class EvaluationMetricsCalculatorTest {
@@ -23,7 +24,9 @@ class EvaluationMetricsCalculatorTest {
         val appKotlin = kotlinRoot.resolve("App.kt")
         val utilityKotlin = kotlinRoot.resolve("Utility.kt")
         val extraKotlin = kotlinRoot.resolve("Extra.kt")
-        appJava.writeText("package com.example; public class App { public String name() { return \"x\"; } }")
+        appJava.writeText(
+            "package com.example; public class App { public String name() { return \"x\"; } public String getTitle() { return \"x\"; } }",
+        )
         missingJava.writeText("package com.example; public class Missing {}")
         utilityJava.writeText("package com.example; public final class Utility {}")
         appKotlin.writeText("package com.example\nclass App { fun name(input: Any?) = call(input!!); fun newHelper() = Unit }")
@@ -60,6 +63,8 @@ class EvaluationMetricsCalculatorTest {
         assertContains(metrics.structure.kotlinOnlyPublicApiNames, "newHelper")
         assertContains(metrics.structure.nameDiffs.classLike.missingInKotlin, "Missing")
         assertContains(metrics.structure.nameDiffs.classLikeToObjectNames, "Utility")
+        assertContains(metrics.structure.nameDiffs.javaBeanAccessorNames, "getTitle")
+        assertFalse("getTitle" in metrics.structure.nameDiffs.functions.missingInKotlin)
         assertContains(metrics.structure.nameDiffs.functions.kotlinOnly, "newHelper")
         assertEquals(1, metrics.quality.notNullAssertionCount)
         assertEquals(1, metrics.quality.notNullAssertionInCallCount)

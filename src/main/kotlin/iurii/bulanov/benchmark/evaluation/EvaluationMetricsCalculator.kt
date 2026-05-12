@@ -172,6 +172,12 @@ class EvaluationMetricsCalculator(
         val kotlinClassLikeNames = kotlinStructures.flatMap { it.classLikeNames }.toSet()
         val kotlinObjectNames = kotlinStructures.flatMap { it.objectNames }.toSet()
         val classLikeToObjectNames = javaClassLikeNames.intersect(kotlinObjectNames).sorted()
+        val functionDiff =
+            nameDiff(
+                javaStructures.flatMap { it.functionNames },
+                kotlinStructures.flatMap { it.functionNames },
+            )
+        val javaBeanAccessorNames = functionDiff.missingInKotlin.filter { it.isJavaBeanAccessorName() }
 
         return StructuralNameDiffs(
             classLike =
@@ -195,13 +201,28 @@ class EvaluationMetricsCalculator(
                     kotlinObjectNames.minus(classLikeToObjectNames),
                 ),
             classLikeToObjectNames = classLikeToObjectNames,
+            javaBeanAccessorNames = javaBeanAccessorNames,
             functions =
-                nameDiff(
-                    javaStructures.flatMap { it.functionNames },
-                    kotlinStructures.flatMap { it.functionNames },
+                StructuralNameDiff(
+                    missingInKotlin = functionDiff.missingInKotlin.minus(javaBeanAccessorNames),
+                    kotlinOnly = functionDiff.kotlinOnly,
                 ),
         )
     }
+
+    /**
+     * Returns whether a missing Java method name looks like a bean getter/setter.
+     */
+    private fun String.isJavaBeanAccessorName(): Boolean =
+        startsWith("get") &&
+            length > BEAN_GETTER_PREFIX_LENGTH &&
+            this[BEAN_GETTER_PREFIX_LENGTH].isUpperCase() ||
+            startsWith("set") &&
+            length > BEAN_SETTER_PREFIX_LENGTH &&
+            this[BEAN_SETTER_PREFIX_LENGTH].isUpperCase() ||
+            startsWith("is") &&
+            length > BEAN_BOOLEAN_GETTER_PREFIX_LENGTH &&
+            this[BEAN_BOOLEAN_GETTER_PREFIX_LENGTH].isUpperCase()
 
     /**
      * Builds a deterministic two-way name diff.
@@ -264,3 +285,7 @@ data class EvaluationMetrics(
     val structure: StructuralMetrics,
     val quality: QualityMetrics,
 )
+
+private const val BEAN_BOOLEAN_GETTER_PREFIX_LENGTH = 2
+private const val BEAN_GETTER_PREFIX_LENGTH = 3
+private const val BEAN_SETTER_PREFIX_LENGTH = 3

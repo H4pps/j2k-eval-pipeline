@@ -177,6 +177,9 @@ class EvaluationReportWriter(
         appendLine("### Structural Name Differences")
         appendLine()
         appendLine("These name lists are heuristic; Java getters may become Kotlin properties.")
+        appendLine(
+            "Markdown caps long lists at `$STRUCTURAL_NAME_DISPLAY_LIMIT` entries; full lists are in `evaluation.json` under `structure.name_diffs`.",
+        )
         appendNameList("Java classes/records converted to Kotlin objects", structure.nameDiffs.classLikeToObjectNames)
         appendNameDiff(
             "Classes and records",
@@ -192,6 +195,7 @@ class EvaluationReportWriter(
         )
         appendNameDiff("Enums", "Java enums missing in Kotlin", "Kotlin enums not present in Java", structure.nameDiffs.enums)
         appendNameList("Kotlin objects not present in Java", structure.nameDiffs.objects.kotlinOnly)
+        appendNameList("Java bean accessors that may be Kotlin properties", structure.nameDiffs.javaBeanAccessorNames)
         appendNameDiff(
             "Methods and functions",
             "Java methods missing as Kotlin functions",
@@ -479,6 +483,7 @@ class EvaluationReportWriter(
             "enums" to nameDiffJson(nameDiffs.enums),
             "objects" to nameDiffJson(nameDiffs.objects),
             "class_like_to_object_names" to nameDiffs.classLikeToObjectNames,
+            "java_bean_accessors_missing_as_functions" to nameDiffs.javaBeanAccessorNames,
             "functions" to nameDiffJson(nameDiffs.functions),
         )
 

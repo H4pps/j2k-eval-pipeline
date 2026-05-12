@@ -148,6 +148,7 @@ data class StructuralNameDiffs(
     val enums: StructuralNameDiff,
     val objects: StructuralNameDiff,
     val classLikeToObjectNames: List<String>,
+    val javaBeanAccessorNames: List<String>,
     val functions: StructuralNameDiff,
 )
 
