@@ -15,7 +15,7 @@ usage() {
     "  ./scripts/run-j2k-eval hikaricp --zip-output build/local-artifacts/hikaricp.zip" \
     "" \
     "This runs the same local pipeline steps as GitHub Actions:" \
-    "  checkout-benchmark -> convertBenchmark -> evaluate"
+    "  checkout -> convert -> evaluate"
 }
 
 # Resolves a short benchmark alias to the matching checked-in YAML config.
@@ -91,7 +91,7 @@ run_benchmark() {
   benchmark_id="$(benchmark_id_from_config "${config}")"
 
   echo "==> Checking out ${config}"
-  run_gradle run --args="checkout-benchmark --config ${config}"
+  run_gradle run --args="checkout --config ${config}"
 
   if [[ "${checkout_only}" == "1" ]]; then
     echo "==> Checkout-only mode enabled; skipping conversion and evaluation"
@@ -100,7 +100,7 @@ run_benchmark() {
 
   echo "==> Running static J2K for ${config}"
   mkdir -p "build/j2k/${benchmark_id}/logs"
-  run_gradle --stacktrace convertBenchmark -PbenchmarkConfig="${config}" 2>&1 \
+  run_gradle --stacktrace convert -PbenchmarkConfig="${config}" 2>&1 \
     | tee "build/j2k/${benchmark_id}/logs/gradle-convert.log"
 
   echo "==> Evaluating generated Kotlin for ${config}"
