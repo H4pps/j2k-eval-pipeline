@@ -121,6 +121,7 @@ class J2kConvertStarter : ApplicationStarter {
             )
 
             val stagingResult = sourceTreeStager.stage(checkoutDirectory, paths.stagingDirectory)
+            refreshStagedSourceTree(paths.stagingDirectory)
             log(
                 paths,
                 "conversion_sources_staged",
@@ -253,6 +254,7 @@ class J2kConvertStarter : ApplicationStarter {
                 ApplicationManager.getApplication().runReadAction(
                     Computable {
                         findPsiJavaFiles(project, paths.stagingDirectory, config.java.sourceRoots)
+                            .also(::verifyPsiMatchesDisk)
                     },
                 )
             require(javaFiles.size == sourceJavaFileCount) {
@@ -525,6 +527,24 @@ class J2kConvertStarter : ApplicationStarter {
             }
 
     /**
+     * Prevents stale IDE VFS/PSI content from being reported as a successful conversion.
+     */
+    private fun verifyPsiMatchesDisk(javaFiles: List<PsiJavaFile>) {
+        javaFiles.forEach { javaFile ->
+            val filePath = Path.of(javaFile.virtualFile.path)
+            val diskText = Files.readString(filePath).normalizeLineEndings()
+            require(javaFile.text.normalizeLineEndings() == diskText) {
+                "stale PSI content for staged Java file: $filePath"
+            }
+        }
+    }
+
+    /**
+     * Normalizes line endings before comparing PSI text with on-disk source text.
+     */
+    private fun String.normalizeLineEndings(): String = replace("\r\n", "\n").replace("\r", "\n")
+
+    /**
      * Converts an absolute Java file path into a source-root-relative path.
      */
     private fun relativeSourcePath(
@@ -540,6 +560,16 @@ class J2kConvertStarter : ApplicationStarter {
             }
         }
         return stagingDirectory.relativize(normalizedFile)
+    }
+
+    /**
+     * Forces IntelliJ's virtual file system to observe the freshly recreated staging tree.
+     */
+    private fun refreshStagedSourceTree(stagingDirectory: Path) {
+        val virtualRoot =
+            LocalFileSystem.getInstance().refreshAndFindFileByNioFile(stagingDirectory)
+                ?: error("failed to refresh staged source tree: $stagingDirectory")
+        VfsUtil.markDirtyAndRefresh(false, true, true, virtualRoot)
     }
 
     /**

@@ -6,7 +6,7 @@ description: Custom Java dataset for targeted static J2K stress testing.
 repository:
   upstream: https://github.com/H4pps/j2k-edge-cases
   source: https://github.com/H4pps/j2k-edge-cases
-  ref: 10b5dfaaa25e8f0c393392fc39825792fdb5e4c8
+  ref: f26f51681e6d1353835e3d16422526ea419a2d8d
   branch: main
 
 checkout:

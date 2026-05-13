@@ -42,7 +42,7 @@ class GeneratedKotlinCollector {
                             warnings += "generated Kotlin path collision: ${generatedDirectory.relativize(target)}"
                         }
                         target.parent?.createDirectories()
-                        Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+                        Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
                         generatedFiles.add(target)
                     }
             }

@@ -17,7 +17,11 @@ class ConversionPathResolver(
         overrides: ConversionPathOverrides = ConversionPathOverrides(null, null, null, null),
     ): ConversionPaths {
         val benchmarkRoot = outputRoot.resolve(config.id)
-        val stagingDirectory = safeBuildPath(overrides.stagingDirectory ?: benchmarkRoot.resolve("staging-source"), "stagingDir")
+        val stagingDirectory =
+            safeBuildPath(
+                overrides.stagingDirectory ?: benchmarkRoot.resolve("staging-source-${config.repository.ref.toPathToken()}"),
+                "stagingDir",
+            )
         val generatedKotlinDirectory =
             safeBuildPath(overrides.generatedKotlinDirectory ?: benchmarkRoot.resolve("generated-kotlin"), "generatedKotlinDir")
         val conversionReport = safeBuildPath(overrides.conversionReport ?: benchmarkRoot.resolve("conversion.json"), "conversionReport")
@@ -49,5 +53,23 @@ class ConversionPathResolver(
             throw ConversionException("$fieldName must stay under build/: $path")
         }
         return normalized
+    }
+
+    /**
+     * Produces a compact path segment from a repository ref for disposable staging directories.
+     */
+    private fun String.toPathToken(): String =
+        take(12)
+            .map { character -> if (character.isSafePathTokenCharacter()) character else '_' }
+            .joinToString("")
+            .ifBlank { "ref" }
+
+    /**
+     * Returns true when a character can be used inside a simple build-path token.
+     */
+    private fun Char.isSafePathTokenCharacter(): Boolean = isLetterOrDigit() || this in SAFE_PATH_TOKEN_PUNCTUATION
+
+    private companion object {
+        private val SAFE_PATH_TOKEN_PUNCTUATION = setOf('.', '_', '-')
     }
 }

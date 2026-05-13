@@ -16,7 +16,7 @@ class ConversionPathResolverTest {
     fun `resolves default conversion paths from benchmark id`() {
         val paths = ConversionPathResolver().resolve(testConfig("sample"))
 
-        assertEquals(Path.of("build/j2k/sample/staging-source"), paths.stagingDirectory)
+        assertEquals(Path.of("build/j2k/sample/staging-source-abc123"), paths.stagingDirectory)
         assertEquals(Path.of("build/j2k/sample/generated-kotlin"), paths.generatedKotlinDirectory)
         assertEquals(Path.of("build/j2k/sample/conversion.json"), paths.conversionReport)
         assertEquals(Path.of("build/j2k/sample/logs"), paths.logsDirectory)

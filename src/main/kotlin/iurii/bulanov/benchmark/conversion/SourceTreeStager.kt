@@ -37,7 +37,7 @@ class SourceTreeStager(
                         target.createDirectories()
                     } else if (Files.isRegularFile(source)) {
                         target.parent?.createDirectories()
-                        Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+                        Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
                         copiedFileCount += 1
                     }
                 }
