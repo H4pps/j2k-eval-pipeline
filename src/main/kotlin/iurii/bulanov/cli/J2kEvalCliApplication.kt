@@ -58,7 +58,7 @@ class J2kEvalCli(
 ) : CliktCommand(name = "j2k-eval") {
     init {
         subcommands(
-            CheckoutBenchmarkCliktCommand(checkoutRunner),
+            CheckoutCliktCommand(checkoutRunner),
             EvaluateCliktCommand(evaluatorRunner),
         )
     }
@@ -72,9 +72,9 @@ class J2kEvalCli(
 /**
  * Clikt subcommand that validates benchmark checkout inputs and runtime sanity checks.
  */
-private class CheckoutBenchmarkCliktCommand(
+private class CheckoutCliktCommand(
     private val runner: BenchmarkCheckoutRunner,
-) : CliktCommand(name = "checkout-benchmark") {
+) : CliktCommand(name = "checkout") {
     private val configPath by option("--config", help = "Path to benchmark YAML config").path().required()
     private val runBuild by option("--run-build", help = "Run configured benchmark build commands").flag(default = false)
     private val githubSummaryPath by option("--github-summary", help = "Path to GitHub step summary output").path()

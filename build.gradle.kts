@@ -119,7 +119,7 @@ tasks.check {
     dependsOn(tasks.jacocoTestCoverageVerification)
 }
 
-tasks.register("convertBenchmark") {
+val convert by tasks.registering {
     group = "j2k"
     description = "Runs static J2K conversion for a benchmark config through the headless IntelliJ runner."
     dependsOn(":j2k-runner-plugin:runIde")

@@ -64,7 +64,7 @@ jobs:
       - name: Validate and checkout benchmark inputs
         shell: bash
         run: |
-          ./gradlew --no-daemon run --args="checkout-benchmark --config ${{ matrix.config }} --github-summary $GITHUB_STEP_SUMMARY --github-output $GITHUB_OUTPUT"
+          ./gradlew --no-daemon run --args="checkout --config ${{ matrix.config }} --github-summary $GITHUB_STEP_SUMMARY --github-output $GITHUB_OUTPUT"
 
       - name: Run static J2K conversion
         timeout-minutes: 30
@@ -72,7 +72,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/j2k/${{ matrix.benchmark }}/logs
-          ./gradlew --no-daemon --console=plain --stacktrace convertBenchmark -PbenchmarkConfig=${{ matrix.config }} 2>&1 \
+          ./gradlew --no-daemon --console=plain --stacktrace convert -PbenchmarkConfig=${{ matrix.config }} 2>&1 \
             | tee build/j2k/${{ matrix.benchmark }}/logs/gradle-convert.log
 
       - name: Run evaluator
