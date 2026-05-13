@@ -42,6 +42,8 @@ class EvaluationReportWriter(
                 "conversion" to conversionJson(result.conversion),
                 "file_coverage" to fileCoverageJson(result.fileCoverage),
                 "structure" to structureJson(result.structure),
+                "content" to contentJson(result.content),
+                "nullability" to nullabilityJson(result.nullability),
                 "quality" to qualityJson(result.quality),
                 "analysis" to assignmentAnalysisJson(result),
                 "counts" to countsJson(result),
@@ -62,6 +64,8 @@ class EvaluationReportWriter(
             appendCheckout(result.checkout)
             appendFileCoverage(result.fileCoverage)
             appendStructure(result.structure)
+            appendContent(result.content)
+            appendNullability(result.nullability)
             appendQuality(result.quality)
             appendNotableFailures(result)
             appendWarnings(result)
@@ -87,6 +91,10 @@ class EvaluationReportWriter(
         appendLine(
             "- Quality review: `${result.quality.findings.size}` Kotlin quality warnings were produced for " +
                 "manual review.",
+        )
+        appendLine(
+            "- Content/nullability review: `${result.content.findings.size + result.nullability.findings.size}` " +
+                "parser-backed content or nullability warnings were produced.",
         )
     }
 
@@ -223,40 +231,136 @@ class EvaluationReportWriter(
     }
 
     /**
+     * Appends parser-backed body and control-flow preservation counters.
+     */
+    private fun StringBuilder.appendContent(content: ContentMetrics) {
+        appendLine()
+        appendLine("## Content Preservation")
+        appendLine()
+        appendLine(
+            "Generated Kotlin function bodies are compared with original Java method bodies using parser-backed " +
+                "body-shape heuristics.",
+        )
+        appendLine()
+        appendLine("- Matched files analyzed: `${content.matchedFileCount}`")
+        appendLine("- Java non-empty methods: `${content.javaNonEmptyMethodCount}`")
+        appendLine("- Kotlin non-empty functions: `${content.kotlinNonEmptyFunctionCount}`")
+        appendLine("- Java empty methods: `${content.javaEmptyMethodCount}`")
+        appendLine("- Kotlin empty functions: `${content.kotlinEmptyFunctionCount}`")
+        appendLine("- Missing Kotlin bodies: `${content.missingKotlinBodies.size}`")
+        appendLine("- Content-shape mismatch files: `${content.contentShapeMismatchFiles.size}`")
+        appendLine("- Return statements: Java `${content.javaReturnCount}`, Kotlin `${content.kotlinReturnCount}`")
+        appendLine("- Branches: Java `${content.javaBranchCount}`, Kotlin `${content.kotlinBranchCount}`")
+        appendLine("- Loops: Java `${content.javaLoopCount}`, Kotlin `${content.kotlinLoopCount}`")
+        appendLine("- Throws: Java `${content.javaThrowCount}`, Kotlin `${content.kotlinThrowCount}`")
+        appendLine("- Try blocks: Java `${content.javaTryCount}`, Kotlin `${content.kotlinTryCount}`")
+        appendNameList("Java method bodies missing in Kotlin", content.missingKotlinBodies)
+        appendNameList("Files with content-shape mismatches", content.contentShapeMismatchFiles)
+    }
+
+    /**
+     * Appends Java annotation to Kotlin nullable-type preservation counters.
+     */
+    private fun StringBuilder.appendNullability(nullability: NullabilityMetrics) {
+        appendLine()
+        appendLine("## Nullability Signals")
+        appendLine()
+        appendLine(
+            "Java nullability annotations are compared with generated Kotlin nullable types by declaration name.",
+        )
+        appendLine()
+        appendLine("- Java nullable annotations: `${nullability.javaNullableAnnotationCount}`")
+        appendLine("- Java not-null annotations: `${nullability.javaNotNullAnnotationCount}`")
+        appendLine("- Kotlin nullable types: `${nullability.kotlinNullableTypeCount}`")
+        appendLine("- Nullable annotations not preserved: `${nullability.nullableAnnotationsNotPreserved.size}`")
+        appendLine("- Not-null annotations converted to nullable: `${nullability.notNullAnnotationsBecameNullable.size}`")
+        appendNameList("Nullable Java declarations not preserved as nullable Kotlin", nullability.nullableAnnotationsNotPreserved)
+        appendNameList("Not-null Java declarations converted to nullable Kotlin", nullability.notNullAnnotationsBecameNullable)
+    }
+
+    /**
      * Appends concrete conversion failures and review risks.
      */
     private fun StringBuilder.appendNotableFailures(result: EvaluationResult) {
         appendLine()
         appendLine("## Notable Failures")
         appendLine()
-        val hasFailures =
-            result.conversion.errors.isNotEmpty() ||
-                result.fileCoverage.missingKotlinFiles.isNotEmpty() ||
-                result.fileCoverage.packageMismatchFiles.isNotEmpty() ||
-                result.quality.findings.isNotEmpty()
-
-        if (!hasFailures) {
+        if (!result.hasNotableFailures()) {
             appendLine("- None")
             return
         }
 
-        if (result.conversion.errors.isNotEmpty()) {
-            appendLine("- Converter errors: `${result.conversion.errors.size}`")
-            result.conversion.errors.forEach { error -> appendLine("  - `$error`") }
+        appendConversionFailures(result.conversion)
+        appendFileCoverageFailures(result.fileCoverage)
+        appendReviewWarningSummaries(result)
+    }
+
+    /**
+     * Returns whether the report has any concrete failure or review-risk finding.
+     */
+    private fun EvaluationResult.hasNotableFailures(): Boolean =
+        conversion.errors.isNotEmpty() ||
+            fileCoverage.missingKotlinFiles.isNotEmpty() ||
+            fileCoverage.packageMismatchFiles.isNotEmpty() ||
+            content.findings.isNotEmpty() ||
+            nullability.findings.isNotEmpty() ||
+            quality.findings.isNotEmpty()
+
+    /**
+     * Appends converter errors, if any.
+     */
+    private fun StringBuilder.appendConversionFailures(conversion: ConversionEvaluation) {
+        if (conversion.errors.isNotEmpty()) {
+            appendLine("- Converter errors: `${conversion.errors.size}`")
+            conversion.errors.forEach { error -> appendLine("  - `$error`") }
         }
-        if (result.fileCoverage.missingKotlinFiles.isNotEmpty()) {
-            appendLine("- Missing generated Kotlin files: `${result.fileCoverage.missingKotlinFiles.size}`")
-            result.fileCoverage.missingKotlinFiles.forEach { missingFile -> appendLine("  - `$missingFile`") }
+    }
+
+    /**
+     * Appends missing output and package mismatch failures, if any.
+     */
+    private fun StringBuilder.appendFileCoverageFailures(fileCoverage: FileCoverageMetrics) {
+        if (fileCoverage.missingKotlinFiles.isNotEmpty()) {
+            appendLine("- Missing generated Kotlin files: `${fileCoverage.missingKotlinFiles.size}`")
+            fileCoverage.missingKotlinFiles.forEach { missingFile -> appendLine("  - `$missingFile`") }
         }
-        if (result.fileCoverage.packageMismatchFiles.isNotEmpty()) {
-            appendLine("- Package mismatches: `${result.fileCoverage.packageMismatchFiles.size}`")
-            result.fileCoverage.packageMismatchFiles.forEach { mismatch -> appendLine("  - `$mismatch`") }
+        if (fileCoverage.packageMismatchFiles.isNotEmpty()) {
+            appendLine("- Package mismatches: `${fileCoverage.packageMismatchFiles.size}`")
+            fileCoverage.packageMismatchFiles.forEach { mismatch -> appendLine("  - `$mismatch`") }
         }
-        if (result.quality.findings.isNotEmpty()) {
-            appendLine(
-                "- Kotlin quality review warnings: `${result.quality.findings.size}` " +
-                    "(review risks, not conversion execution failures)",
-            )
+    }
+
+    /**
+     * Appends review-warning summaries for content, nullability, and quality checks.
+     */
+    private fun StringBuilder.appendReviewWarningSummaries(result: EvaluationResult) {
+        appendReviewWarningSummary(
+            title = "Content preservation",
+            count = result.content.findings.size,
+            suffix = "body-shape review risks",
+        )
+        appendReviewWarningSummary(
+            title = "Nullability preservation",
+            count = result.nullability.findings.size,
+            suffix = "annotation/type review risks",
+        )
+        appendReviewWarningSummary(
+            title = "Kotlin quality",
+            count = result.quality.findings.size,
+            suffix = "review risks",
+        )
+    }
+
+    /**
+     * Appends one review-warning summary when [count] is nonzero.
+     */
+    private fun StringBuilder.appendReviewWarningSummary(
+        title: String,
+        count: Int,
+        suffix: String,
+    ) {
+        if (count > 0) {
+            appendLine("- $title review warnings: `$count` ($suffix, not conversion execution failures)")
         }
     }
 
@@ -394,6 +498,8 @@ class EvaluationReportWriter(
             "evaluation_status" to result.status.name.lowercase(),
             "file_coverage_percent" to result.fileCoverage.coveragePercent,
             "missing_output_count" to result.fileCoverage.missingKotlinFiles.size,
+            "content_warning_count" to result.content.findings.size,
+            "nullability_warning_count" to result.nullability.findings.size,
             "quality_warning_count" to result.quality.findings.size,
         )
 
@@ -474,6 +580,44 @@ class EvaluationReportWriter(
         )
 
     /**
+     * Renders content preservation metrics to a JSON-compatible map.
+     */
+    private fun contentJson(metrics: ContentMetrics): Map<String, Any?> =
+        linkedMapOf(
+            "matched_file_count" to metrics.matchedFileCount,
+            "java_non_empty_method_count" to metrics.javaNonEmptyMethodCount,
+            "kotlin_non_empty_function_count" to metrics.kotlinNonEmptyFunctionCount,
+            "java_empty_method_count" to metrics.javaEmptyMethodCount,
+            "kotlin_empty_function_count" to metrics.kotlinEmptyFunctionCount,
+            "missing_kotlin_bodies" to metrics.missingKotlinBodies,
+            "content_shape_mismatch_files" to metrics.contentShapeMismatchFiles,
+            "java_return_count" to metrics.javaReturnCount,
+            "kotlin_return_count" to metrics.kotlinReturnCount,
+            "java_branch_count" to metrics.javaBranchCount,
+            "kotlin_branch_count" to metrics.kotlinBranchCount,
+            "java_loop_count" to metrics.javaLoopCount,
+            "kotlin_loop_count" to metrics.kotlinLoopCount,
+            "java_throw_count" to metrics.javaThrowCount,
+            "kotlin_throw_count" to metrics.kotlinThrowCount,
+            "java_try_count" to metrics.javaTryCount,
+            "kotlin_try_count" to metrics.kotlinTryCount,
+            "findings" to findingsJson(metrics.findings),
+        )
+
+    /**
+     * Renders nullability preservation metrics to a JSON-compatible map.
+     */
+    private fun nullabilityJson(metrics: NullabilityMetrics): Map<String, Any?> =
+        linkedMapOf(
+            "java_nullable_annotation_count" to metrics.javaNullableAnnotationCount,
+            "java_not_null_annotation_count" to metrics.javaNotNullAnnotationCount,
+            "kotlin_nullable_type_count" to metrics.kotlinNullableTypeCount,
+            "nullable_annotations_not_preserved" to metrics.nullableAnnotationsNotPreserved,
+            "not_null_annotations_became_nullable" to metrics.notNullAnnotationsBecameNullable,
+            "findings" to findingsJson(metrics.findings),
+        )
+
+    /**
      * Renders grouped structural name diffs to a JSON-compatible map.
      */
     private fun nameDiffsJson(nameDiffs: StructuralNameDiffs): Map<String, Any?> =
@@ -511,16 +655,21 @@ class EvaluationReportWriter(
             "getter_setter_call_count" to metrics.getterSetterCallCount,
             "nullable_boolean_comparison_count" to metrics.nullableBooleanComparisonCount,
             "eager_property_initialization_count" to metrics.eagerPropertyInitializationCount,
-            "findings" to
-                metrics.findings.map { finding ->
-                    linkedMapOf(
-                        "code" to finding.code,
-                        "message" to finding.message,
-                        "path" to finding.path,
-                        "count" to finding.count,
-                    )
-                },
+            "findings" to findingsJson(metrics.findings),
         )
+
+    /**
+     * Renders evaluator findings to JSON-compatible maps.
+     */
+    private fun findingsJson(findings: List<EvaluationWarning>): List<Map<String, Any?>> =
+        findings.map { finding ->
+            linkedMapOf(
+                "code" to finding.code,
+                "message" to finding.message,
+                "path" to finding.path,
+                "count" to finding.count,
+            )
+        }
 
     private companion object {
         private const val COMPLETE_COVERAGE = 100.0

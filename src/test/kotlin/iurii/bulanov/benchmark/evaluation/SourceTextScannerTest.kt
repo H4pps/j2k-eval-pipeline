@@ -18,6 +18,20 @@ class SourceTextScannerTest {
                   private String ignored = "class Ghost { public void fake() {} }";
                   // interface Ignored {}
                   public String getName() { return "name"; }
+                  @Nullable public String maybeName(@NotNull String input) {
+                    if (input.isEmpty()) {
+                      return null;
+                    }
+                    for (int index = 0; index < 1; index++) {
+                      input = input.trim();
+                    }
+                    try {
+                      return input;
+                    } catch (RuntimeException exception) {
+                      throw exception;
+                    }
+                  }
+                  public void empty() {}
                 }
                 record User(String id) {
                   public String displayName() { return id; }
@@ -40,6 +54,15 @@ class SourceTextScannerTest {
         assertFalse("Ghost" in java.publicApiNames)
         assertFalse("fake" in java.publicApiNames)
         assertEquals(setOf("name"), java.javaBeanAccessorPropertyNames["getName"])
+        assertTrue("maybeName" in java.content.nonEmptyFunctionNames)
+        assertTrue("empty" in java.content.emptyFunctionNames)
+        assertEquals(4, java.content.returnCount)
+        assertEquals(1, java.content.branchCount)
+        assertEquals(1, java.content.loopCount)
+        assertEquals(1, java.content.throwCount)
+        assertEquals(1, java.content.tryCount)
+        assertEquals(setOf("maybeName"), java.nullability.nullableNames)
+        assertEquals(setOf("input"), java.nullability.notNullNames)
     }
 
     @Test
@@ -50,8 +73,20 @@ class SourceTextScannerTest {
                 package com.example
                 class App(val title: String) {
                   val name: String = "name"
+                  val nullableName: String? = null
                   private val ignored = "fun fake() = Unit"
-                  fun run(): String = name
+                  fun run(input: String?): String? {
+                    if (input == null) return null
+                    for (index in 0..1) {
+                      println(index)
+                    }
+                    try {
+                      return input
+                    } catch (exception: RuntimeException) {
+                      throw exception
+                    }
+                  }
+                  fun empty() {}
                 }
                 interface Named
                 enum class Mode { ON }
@@ -73,6 +108,16 @@ class SourceTextScannerTest {
         assertTrue("run" in kotlin.functionNames)
         assertFalse("ignored" in kotlin.propertyNames)
         assertFalse("fake" in kotlin.functionNames)
+        assertTrue("run" in kotlin.content.nonEmptyFunctionNames)
+        assertTrue("empty" in kotlin.content.emptyFunctionNames)
+        assertEquals(2, kotlin.content.returnCount)
+        assertEquals(1, kotlin.content.branchCount)
+        assertEquals(1, kotlin.content.loopCount)
+        assertEquals(1, kotlin.content.throwCount)
+        assertEquals(1, kotlin.content.tryCount)
+        assertTrue("nullableName" in kotlin.nullability.nullableTypeNames)
+        assertTrue("input" in kotlin.nullability.nullableTypeNames)
+        assertTrue("run" in kotlin.nullability.nullableTypeNames)
     }
 
     @Test

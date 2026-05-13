@@ -50,6 +50,8 @@ data class EvaluationResult(
     val conversion: ConversionEvaluation,
     val fileCoverage: FileCoverageMetrics,
     val structure: StructuralMetrics,
+    val content: ContentMetrics,
+    val nullability: NullabilityMetrics,
     val quality: QualityMetrics,
     val status: EvaluationStatus,
     val warnings: List<EvaluationWarning>,
@@ -158,6 +160,42 @@ data class StructuralNameDiffs(
 data class StructuralNameDiff(
     val missingInKotlin: List<String>,
     val kotlinOnly: List<String>,
+)
+
+/**
+ * Parser-backed method-body and control-flow preservation metrics.
+ */
+data class ContentMetrics(
+    val matchedFileCount: Int,
+    val javaNonEmptyMethodCount: Int,
+    val kotlinNonEmptyFunctionCount: Int,
+    val javaEmptyMethodCount: Int,
+    val kotlinEmptyFunctionCount: Int,
+    val missingKotlinBodies: List<String>,
+    val contentShapeMismatchFiles: List<String>,
+    val javaReturnCount: Int,
+    val kotlinReturnCount: Int,
+    val javaBranchCount: Int,
+    val kotlinBranchCount: Int,
+    val javaLoopCount: Int,
+    val kotlinLoopCount: Int,
+    val javaThrowCount: Int,
+    val kotlinThrowCount: Int,
+    val javaTryCount: Int,
+    val kotlinTryCount: Int,
+    val findings: List<EvaluationWarning>,
+)
+
+/**
+ * Parser-backed Java annotation to Kotlin nullable-type preservation metrics.
+ */
+data class NullabilityMetrics(
+    val javaNullableAnnotationCount: Int,
+    val javaNotNullAnnotationCount: Int,
+    val kotlinNullableTypeCount: Int,
+    val nullableAnnotationsNotPreserved: List<String>,
+    val notNullAnnotationsBecameNullable: List<String>,
+    val findings: List<EvaluationWarning>,
 )
 
 /**

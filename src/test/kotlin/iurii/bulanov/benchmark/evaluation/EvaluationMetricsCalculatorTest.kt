@@ -24,6 +24,8 @@ class EvaluationMetricsCalculatorTest {
 
         assertFileCoverage(metrics)
         assertStructure(metrics)
+        assertContent(metrics)
+        assertNullability(metrics)
         assertQuality(metrics)
     }
 
@@ -84,6 +86,9 @@ class EvaluationMetricsCalculatorTest {
             package com.example;
             public class App {
               public String name() { return "x"; }
+              @Nullable public String maybeName() { return null; }
+              @NotNull public String strictName() { return "x"; }
+              public String lostBody() { return "body"; }
               public String getTitle() { return "x"; }
               public void setEnabled(boolean enabled) {}
               public boolean isReady() { return true; }
@@ -99,6 +104,9 @@ class EvaluationMetricsCalculatorTest {
               val title: String = "x"
               var enabled: Boolean = true
               fun name(input: Any?) = call(input!!)
+              fun maybeName(): String = "x"
+              fun strictName(): String? = "x"
+              fun lostBody() {}
               fun newHelper() = Unit
             }
             """.trimIndent(),
@@ -156,6 +164,29 @@ class EvaluationMetricsCalculatorTest {
         assertFalse("setEnabled" in metrics.structure.nameDiffs.functions.missingInKotlin)
         assertContains(metrics.structure.nameDiffs.functions.missingInKotlin, "isReady")
         assertContains(metrics.structure.nameDiffs.functions.kotlinOnly, "newHelper")
+    }
+
+    /**
+     * Asserts parser-backed content preservation metrics.
+     */
+    private fun assertContent(metrics: EvaluationMetrics) {
+        assertEquals(2, metrics.content.matchedFileCount)
+        assertContains(metrics.content.missingKotlinBodies, "com/example/App.kt#lostBody")
+        assertFalse("com/example/App.kt#getTitle" in metrics.content.missingKotlinBodies)
+        assertFalse("com/example/App.kt#setEnabled" in metrics.content.missingKotlinBodies)
+        assertContains(metrics.content.contentShapeMismatchFiles, "com/example/App.kt")
+        assertTrue(metrics.content.javaNonEmptyMethodCount > metrics.content.kotlinNonEmptyFunctionCount)
+    }
+
+    /**
+     * Asserts parser-backed nullability preservation metrics.
+     */
+    private fun assertNullability(metrics: EvaluationMetrics) {
+        assertEquals(1, metrics.nullability.javaNullableAnnotationCount)
+        assertEquals(1, metrics.nullability.javaNotNullAnnotationCount)
+        assertEquals(2, metrics.nullability.kotlinNullableTypeCount)
+        assertContains(metrics.nullability.nullableAnnotationsNotPreserved, "com/example/App.kt#maybeName")
+        assertContains(metrics.nullability.notNullAnnotationsBecameNullable, "com/example/App.kt#strictName")
     }
 
     /**

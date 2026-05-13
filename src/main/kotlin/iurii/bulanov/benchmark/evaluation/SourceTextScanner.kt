@@ -8,8 +8,21 @@ import com.github.javaparser.ast.CompilationUnit
 import com.github.javaparser.ast.Node
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import com.github.javaparser.ast.body.EnumDeclaration
+import com.github.javaparser.ast.body.FieldDeclaration
 import com.github.javaparser.ast.body.MethodDeclaration
 import com.github.javaparser.ast.body.RecordDeclaration
+import com.github.javaparser.ast.expr.AnnotationExpr
+import com.github.javaparser.ast.expr.LiteralExpr
+import com.github.javaparser.ast.expr.SwitchExpr
+import com.github.javaparser.ast.stmt.DoStmt
+import com.github.javaparser.ast.stmt.ForEachStmt
+import com.github.javaparser.ast.stmt.ForStmt
+import com.github.javaparser.ast.stmt.IfStmt
+import com.github.javaparser.ast.stmt.ReturnStmt
+import com.github.javaparser.ast.stmt.SwitchStmt
+import com.github.javaparser.ast.stmt.ThrowStmt
+import com.github.javaparser.ast.stmt.TryStmt
+import com.github.javaparser.ast.stmt.WhileStmt
 import org.jetbrains.kotlin.K1Deprecation
 import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
@@ -22,11 +35,14 @@ import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtClassBody
+import org.jetbrains.kotlin.psi.KtConstantExpression
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.KtEnumEntry
 import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtIfExpression
+import org.jetbrains.kotlin.psi.KtLoopExpression
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtNullableType
 import org.jetbrains.kotlin.psi.KtObjectDeclaration
@@ -34,7 +50,12 @@ import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtPostfixExpression
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtPsiFactory
+import org.jetbrains.kotlin.psi.KtReturnExpression
 import org.jetbrains.kotlin.psi.KtSafeQualifiedExpression
+import org.jetbrains.kotlin.psi.KtStringTemplateExpression
+import org.jetbrains.kotlin.psi.KtThrowExpression
+import org.jetbrains.kotlin.psi.KtTryExpression
+import org.jetbrains.kotlin.psi.KtWhenExpression
 import org.jetbrains.kotlin.psi.psiUtil.collectDescendantsOfType
 
 /**
@@ -59,6 +80,8 @@ class SourceTextScanner {
         val methodNames = methodDeclarations.map { it.nameAsString }.toSet()
         val declarationNames = classNames + recordNames + interfaceNames + enumNames
         val javaBeanAccessorPropertyNamesByOwner = methodDeclarations.javaBeanAccessorPropertyNamesByOwner()
+        val content = unit.javaContentProfile(methodDeclarations)
+        val nullability = unit.javaNullabilityProfile(methodDeclarations)
 
         return SourceStructure(
             packageName = unit.packageDeclaration.map { it.nameAsString }.orElse(null),
@@ -76,6 +99,8 @@ class SourceTextScanner {
             propertyNamesByOwner = emptyMap(),
             javaBeanAccessorPropertyNames = javaBeanAccessorPropertyNamesByOwner.flattenValues(),
             javaBeanAccessorPropertyNamesByOwner = javaBeanAccessorPropertyNamesByOwner,
+            content = content,
+            nullability = nullability,
             publicApiNames = declarationNames + methodNames,
         )
     }
@@ -99,6 +124,8 @@ class SourceTextScanner {
         val propertyRecords = file.kotlinPropertyRecords()
         val propertyNames = propertyRecords.map { it.name }.toSet()
         val declarationNames = classNames + interfaceNames + enumNames + objectNames
+        val content = file.kotlinContentProfile()
+        val nullability = file.kotlinNullabilityProfile()
 
         return SourceStructure(
             packageName = file.packageFqName.asString().ifEmpty { null },
@@ -116,6 +143,8 @@ class SourceTextScanner {
             propertyNamesByOwner = propertyRecords.groupByOwner(),
             javaBeanAccessorPropertyNames = emptyMap(),
             javaBeanAccessorPropertyNamesByOwner = emptyMap(),
+            content = content,
+            nullability = nullability,
             publicApiNames = declarationNames + functionNames + propertyNames,
         )
     }
@@ -278,6 +307,158 @@ class SourceTextScanner {
             .mapValues { (_, properties) -> properties.map { it.name }.toSet() }
 
     /**
+     * Builds method-body and control-flow content metrics from Java AST nodes.
+     */
+    private fun CompilationUnit.javaContentProfile(methodDeclarations: List<MethodDeclaration>): SourceContentProfile =
+        SourceContentProfile(
+            nonEmptyFunctionNames =
+                methodDeclarations
+                    .filter { it.hasNonEmptyBody() }
+                    .map { it.nameAsString }
+                    .toSet(),
+            emptyFunctionNames =
+                methodDeclarations
+                    .filter { it.hasExplicitEmptyBody() }
+                    .map { it.nameAsString }
+                    .toSet(),
+            returnCount = findAll(ReturnStmt::class.java).size,
+            branchCount =
+                findAll(IfStmt::class.java).size +
+                    findAll(SwitchStmt::class.java).size +
+                    findAll(SwitchExpr::class.java).size,
+            loopCount =
+                findAll(ForStmt::class.java).size +
+                    findAll(ForEachStmt::class.java).size +
+                    findAll(WhileStmt::class.java).size +
+                    findAll(DoStmt::class.java).size,
+            throwCount = findAll(ThrowStmt::class.java).size,
+            tryCount = findAll(TryStmt::class.java).size,
+            literalValues = findAll(LiteralExpr::class.java).map { it.toString() }.toSet(),
+        )
+
+    /**
+     * Returns whether this Java method has a body with at least one statement.
+     */
+    private fun MethodDeclaration.hasNonEmptyBody(): Boolean = body.isPresent && body.get().statements.isNotEmpty()
+
+    /**
+     * Returns whether this Java method explicitly has an empty block body.
+     */
+    private fun MethodDeclaration.hasExplicitEmptyBody(): Boolean = body.isPresent && body.get().statements.isEmpty()
+
+    /**
+     * Builds function-body and control-flow content metrics from Kotlin PSI nodes.
+     */
+    private fun KtFile.kotlinContentProfile(): SourceContentProfile {
+        val functions = collectDescendantsOfType<KtNamedFunction>()
+        return SourceContentProfile(
+            nonEmptyFunctionNames =
+                functions
+                    .filter { it.hasNonEmptyBody() }
+                    .mapNotNull { it.name }
+                    .toSet(),
+            emptyFunctionNames =
+                functions
+                    .filter { it.hasExplicitEmptyBody() }
+                    .mapNotNull { it.name }
+                    .toSet(),
+            returnCount = collectDescendantsOfType<KtReturnExpression>().size,
+            branchCount = collectDescendantsOfType<KtIfExpression>().size + collectDescendantsOfType<KtWhenExpression>().size,
+            loopCount = collectDescendantsOfType<KtLoopExpression>().size,
+            throwCount = collectDescendantsOfType<KtThrowExpression>().size,
+            tryCount = collectDescendantsOfType<KtTryExpression>().size,
+            literalValues =
+                (
+                    collectDescendantsOfType<KtConstantExpression>().map { it.text } +
+                        collectDescendantsOfType<KtStringTemplateExpression>().map { it.text }
+                ).toSet(),
+        )
+    }
+
+    /**
+     * Builds Java nullability annotation metrics for fields, methods, parameters, and record components.
+     */
+    private fun CompilationUnit.javaNullabilityProfile(methodDeclarations: List<MethodDeclaration>): SourceNullabilityProfile {
+        val nullableNames = mutableSetOf<String>()
+        val notNullNames = mutableSetOf<String>()
+        var nullableCount = 0
+        var notNullCount = 0
+
+        fun record(
+            name: String,
+            annotations: List<AnnotationExpr>,
+        ) {
+            annotations.forEach { annotation ->
+                when {
+                    annotation.isNullableAnnotation() -> {
+                        nullableNames += name
+                        nullableCount += 1
+                    }
+                    annotation.isNotNullAnnotation() -> {
+                        notNullNames += name
+                        notNullCount += 1
+                    }
+                }
+            }
+        }
+
+        findAll(FieldDeclaration::class.java).forEach { field ->
+            field.variables.forEach { variable -> record(variable.nameAsString, field.annotations) }
+        }
+        methodDeclarations.forEach { method ->
+            record(method.nameAsString, method.annotations)
+            method.parameters.forEach { parameter -> record(parameter.nameAsString, parameter.annotations) }
+        }
+        findAll(RecordDeclaration::class.java).forEach { recordDeclaration ->
+            recordDeclaration.parameters.forEach { parameter -> record(parameter.nameAsString, parameter.annotations) }
+        }
+
+        return SourceNullabilityProfile(
+            nullableNames = nullableNames,
+            notNullNames = notNullNames,
+            nullableAnnotationCount = nullableCount,
+            notNullAnnotationCount = notNullCount,
+            nullableTypeNames = emptySet(),
+        )
+    }
+
+    /**
+     * Builds Kotlin nullable type metrics for function returns, properties, and parameters.
+     */
+    private fun KtFile.kotlinNullabilityProfile(): SourceNullabilityProfile =
+        SourceNullabilityProfile(
+            nullableNames = emptySet(),
+            notNullNames = emptySet(),
+            nullableAnnotationCount = 0,
+            notNullAnnotationCount = 0,
+            nullableTypeNames =
+                (
+                    collectDescendantsOfType<KtNamedFunction>()
+                        .filter { it.typeReference?.typeElement is KtNullableType }
+                        .mapNotNull { it.name } +
+                        collectDescendantsOfType<KtProperty>()
+                            .filter { it.typeReference?.typeElement is KtNullableType }
+                            .mapNotNull { it.name } +
+                        collectDescendantsOfType<KtParameter>()
+                            .filter { it.typeReference?.typeElement is KtNullableType }
+                            .mapNotNull { it.name }
+                ).toSet(),
+        )
+
+    /**
+     * Returns whether this Kotlin function has an explicit body with content.
+     */
+    private fun KtNamedFunction.hasNonEmptyBody(): Boolean {
+        val body = bodyExpression ?: return false
+        return body.text.trim() != EMPTY_BLOCK
+    }
+
+    /**
+     * Returns whether this Kotlin function explicitly has an empty block body.
+     */
+    private fun KtNamedFunction.hasExplicitEmptyBody(): Boolean = bodyExpression?.text?.trim() == EMPTY_BLOCK
+
+    /**
      * Finds the nearest containing Kotlin class or object name.
      */
     private fun KtElement.containingTypeName(): String? {
@@ -337,14 +518,20 @@ class SourceTextScanner {
                 nameAsString
                     .removePrefix(GETTER_PREFIX)
                     .takeIf { it.hasBeanPropertyStem() }
-                    ?.let { setOf(it.decapitalizeBeanProperty()) }
+                    ?.beanPropertyCandidates()
                     .orEmpty()
             nameAsString.startsWith(SETTER_PREFIX) && parameters.size == SETTER_PARAMETER_COUNT ->
                 nameAsString
                     .removePrefix(SETTER_PREFIX)
                     .takeIf { it.hasBeanPropertyStem() }
-                    ?.let { setOf(it.decapitalizeBeanProperty()) }
-                    .orEmpty()
+                    ?.let { stem ->
+                        stem.beanPropertyCandidates() +
+                            if (parameters.single().type.asString() in BOOLEAN_TYPE_NAMES) {
+                                setOf("$BOOLEAN_GETTER_PREFIX$stem")
+                            } else {
+                                emptySet()
+                            }
+                    }.orEmpty()
             nameAsString.startsWith(BOOLEAN_GETTER_PREFIX) && parameters.isEmpty() ->
                 nameAsString
                     .removePrefix(BOOLEAN_GETTER_PREFIX)
@@ -352,6 +539,17 @@ class SourceTextScanner {
                     ?.let { setOf(nameAsString, it.decapitalizeBeanProperty()) }
                     .orEmpty()
             else -> emptySet()
+        }
+
+    /**
+     * Returns possible Kotlin property names for a JavaBean suffix.
+     */
+    private fun String.beanPropertyCandidates(): Set<String> =
+        buildSet {
+            add(decapitalizeBeanProperty())
+            if (all(Char::isUpperCase)) {
+                add(lowercase())
+            }
         }
 
     /**
@@ -504,10 +702,26 @@ class SourceTextScanner {
      */
     private fun String.endsWithAny(suffixes: Set<String>): Boolean = suffixes.any { endsWith(it) }
 
+    /**
+     * Returns whether this annotation has a recognized nullable name.
+     */
+    private fun AnnotationExpr.isNullableAnnotation(): Boolean = simpleAnnotationName() in NULLABLE_ANNOTATION_NAMES
+
+    /**
+     * Returns whether this annotation has a recognized not-null name.
+     */
+    private fun AnnotationExpr.isNotNullAnnotation(): Boolean = simpleAnnotationName() in NOT_NULL_ANNOTATION_NAMES
+
+    /**
+     * Returns a lower-case simple annotation name, independent from qualification.
+     */
+    private fun AnnotationExpr.simpleAnnotationName(): String = nameAsString.substringAfterLast('.').lowercase()
+
     private companion object {
         private const val ANY_TYPE_NAME = "Any"
         private const val BOOLEAN_GETTER_PREFIX = "is"
         private const val CLASS_FOR_NAME_SELECTOR = "forName"
+        private const val EMPTY_BLOCK = "{}"
         private const val ENUM_CLASS_PREFIX = "enum class "
         private const val GETTER_PREFIX = "get"
         private const val INTERFACE_PREFIX = "interface "
@@ -524,6 +738,7 @@ class SourceTextScanner {
         private const val TOP_LEVEL_OWNER = "<top-level>"
         private const val TRUE_LITERAL = "true"
 
+        private val BOOLEAN_TYPE_NAMES = setOf("Boolean", "boolean", "java.lang.Boolean")
         private val JAVA_INTEROP_QUALIFIER_SUFFIXES =
             setOf(
                 "Arrays",
@@ -531,6 +746,8 @@ class SourceTextScanner {
                 "Objects",
                 "Optional",
             )
+        private val NOT_NULL_ANNOTATION_NAMES = setOf("nonnull", "notnull")
+        private val NULLABLE_ANNOTATION_NAMES = setOf("checkfornull", "nullable")
         private val UNRESOLVED_IMPORT_MARKERS = setOf("unresolved", "missing", "nonexistent")
     }
 }
@@ -571,6 +788,8 @@ data class SourceStructure(
     val propertyNamesByOwner: Map<String, Set<String>>,
     val javaBeanAccessorPropertyNames: Map<String, Set<String>>,
     val javaBeanAccessorPropertyNamesByOwner: Map<String, Map<String, Set<String>>>,
+    val content: SourceContentProfile,
+    val nullability: SourceNullabilityProfile,
     val publicApiNames: Set<String>,
 ) {
     /**
@@ -578,6 +797,31 @@ data class SourceStructure(
      */
     val topLevelDeclarationCount: Int = classLikeCount + interfaceCount + enumCount + objectCount
 }
+
+/**
+ * Parser-backed body and control-flow signals for one source file.
+ */
+data class SourceContentProfile(
+    val nonEmptyFunctionNames: Set<String>,
+    val emptyFunctionNames: Set<String>,
+    val returnCount: Int,
+    val branchCount: Int,
+    val loopCount: Int,
+    val throwCount: Int,
+    val tryCount: Int,
+    val literalValues: Set<String>,
+)
+
+/**
+ * Parser-backed nullability signals for one source file.
+ */
+data class SourceNullabilityProfile(
+    val nullableNames: Set<String>,
+    val notNullNames: Set<String>,
+    val nullableAnnotationCount: Int,
+    val notNullAnnotationCount: Int,
+    val nullableTypeNames: Set<String>,
+)
 
 /**
  * Quality metrics extracted from one Kotlin source file.

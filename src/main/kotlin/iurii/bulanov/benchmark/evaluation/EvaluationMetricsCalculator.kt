@@ -23,10 +23,13 @@ class EvaluationMetricsCalculator(
         val javaStructures = javaFiles.map { scanner.scanJava(it.absolutePath.readText()) }
         val kotlinStructures = kotlinFiles.map { scanner.scanKotlin(it.absolutePath.readText()) }
         val qualityFiles = kotlinFiles.map { scanQuality(it) }
+        val structure = structure(javaStructures, kotlinStructures)
 
         return EvaluationMetrics(
             fileCoverage = fileCoverage(javaFiles, kotlinFiles, pathIndex),
-            structure = structure(javaStructures, kotlinStructures),
+            structure = structure,
+            content = content(pathIndex, structure.nameDiffs.javaBeanAccessorNames.toSet()),
+            nullability = nullability(pathIndex),
             quality = quality(qualityFiles),
         )
     }
@@ -278,6 +281,202 @@ class EvaluationMetricsCalculator(
     }
 
     /**
+     * Calculates parser-backed body and control-flow preservation metrics across matched files.
+     */
+    private fun content(
+        pathIndex: SourcePathIndex,
+        propertyBackedAccessorNames: Set<String>,
+    ): ContentMetrics {
+        val pairs = matchedStructures(pathIndex)
+        val missingBodies =
+            pairs
+                .flatMap { pair ->
+                    pair.java.content.nonEmptyFunctionNames
+                        .filterNot { name -> name in pair.kotlin.content.nonEmptyFunctionNames || name in propertyBackedAccessorNames }
+                        .map { name -> "${pair.path}#$name" }
+                }.sorted()
+        val shapeMismatchFiles =
+            pairs
+                .filter { pair ->
+                    pair.java.content.hasNonPropertyBackedExecutableMethods(propertyBackedAccessorNames) &&
+                        pair.java.content.hasShapeMissingFrom(pair.kotlin.content)
+                }.map { it.path }
+                .sorted()
+
+        return ContentMetrics(
+            matchedFileCount = pairs.size,
+            javaNonEmptyMethodCount = pairs.sumOf { it.java.content.nonEmptyFunctionNames.size },
+            kotlinNonEmptyFunctionCount = pairs.sumOf { it.kotlin.content.nonEmptyFunctionNames.size },
+            javaEmptyMethodCount = pairs.sumOf { it.java.content.emptyFunctionNames.size },
+            kotlinEmptyFunctionCount = pairs.sumOf { it.kotlin.content.emptyFunctionNames.size },
+            missingKotlinBodies = missingBodies,
+            contentShapeMismatchFiles = shapeMismatchFiles,
+            javaReturnCount = pairs.sumOf { it.java.content.returnCount },
+            kotlinReturnCount = pairs.sumOf { it.kotlin.content.returnCount },
+            javaBranchCount = pairs.sumOf { it.java.content.branchCount },
+            kotlinBranchCount = pairs.sumOf { it.kotlin.content.branchCount },
+            javaLoopCount = pairs.sumOf { it.java.content.loopCount },
+            kotlinLoopCount = pairs.sumOf { it.kotlin.content.loopCount },
+            javaThrowCount = pairs.sumOf { it.java.content.throwCount },
+            kotlinThrowCount = pairs.sumOf { it.kotlin.content.throwCount },
+            javaTryCount = pairs.sumOf { it.java.content.tryCount },
+            kotlinTryCount = pairs.sumOf { it.kotlin.content.tryCount },
+            findings = contentFindings(missingBodies, shapeMismatchFiles),
+        )
+    }
+
+    /**
+     * Calculates parser-backed Java annotation to Kotlin nullable-type preservation metrics.
+     */
+    private fun nullability(pathIndex: SourcePathIndex): NullabilityMetrics {
+        val pairs = matchedStructures(pathIndex)
+        val nullableNotPreserved =
+            pairs
+                .flatMap { pair ->
+                    pair.java.nullability.nullableNames
+                        .filterNot { name -> pair.java.nullabilityNameMapsToKotlinNullable(name, pair.kotlin.nullability) }
+                        .map { name -> "${pair.path}#$name" }
+                }.sorted()
+        val notNullBecameNullable =
+            pairs
+                .flatMap { pair ->
+                    pair.java.nullability.notNullNames
+                        .filter { name -> pair.java.nullabilityNameMapsToKotlinNullable(name, pair.kotlin.nullability) }
+                        .map { name -> "${pair.path}#$name" }
+                }.sorted()
+
+        return NullabilityMetrics(
+            javaNullableAnnotationCount = pairs.sumOf { it.java.nullability.nullableAnnotationCount },
+            javaNotNullAnnotationCount = pairs.sumOf { it.java.nullability.notNullAnnotationCount },
+            kotlinNullableTypeCount = pairs.sumOf { it.kotlin.nullability.nullableTypeNames.size },
+            nullableAnnotationsNotPreserved = nullableNotPreserved,
+            notNullAnnotationsBecameNullable = notNullBecameNullable,
+            findings = nullabilityFindings(nullableNotPreserved, notNullBecameNullable),
+        )
+    }
+
+    /**
+     * Reads and scans all matched Java/Kotlin file pairs.
+     */
+    private fun matchedStructures(pathIndex: SourcePathIndex): List<MatchedSourceStructure> =
+        pathIndex.matchedPaths.map { relativeKotlinPath ->
+            MatchedSourceStructure(
+                path = relativeKotlinPath,
+                java =
+                    scanner.scanJava(
+                        pathIndex.javaByExpectedPath
+                            .getValue(relativeKotlinPath)
+                            .absolutePath
+                            .readText(),
+                    ),
+                kotlin =
+                    scanner.scanKotlin(
+                        pathIndex.kotlinByPath
+                            .getValue(relativeKotlinPath)
+                            .absolutePath
+                            .readText(),
+                    ),
+            )
+        }
+
+    /**
+     * Returns whether generated Kotlin lost important Java body-shape signals.
+     */
+    private fun SourceContentProfile.hasShapeMissingFrom(kotlin: SourceContentProfile): Boolean =
+        (returnCount > 0 && kotlin.returnCount == 0) ||
+            (branchCount > 0 && kotlin.branchCount == 0) ||
+            (loopCount > 0 && kotlin.loopCount == 0) ||
+            (throwCount > 0 && kotlin.throwCount == 0) ||
+            (tryCount > 0 && kotlin.tryCount == 0) ||
+            literalValues.minus(kotlin.literalValues).isNotEmpty()
+
+    /**
+     * Returns whether any executable Java method is not represented by a Kotlin property.
+     */
+    private fun SourceContentProfile.hasNonPropertyBackedExecutableMethods(propertyBackedAccessorNames: Set<String>): Boolean =
+        nonEmptyFunctionNames.any { it !in propertyBackedAccessorNames }
+
+    /**
+     * Returns whether a Java nullable/not-null name maps to a nullable Kotlin declaration.
+     */
+    private fun SourceStructure.nullabilityNameMapsToKotlinNullable(
+        name: String,
+        kotlinNullability: SourceNullabilityProfile,
+    ): Boolean =
+        name in kotlinNullability.nullableTypeNames ||
+            javaBeanAccessorPropertyNames[name].orEmpty().any { it in kotlinNullability.nullableTypeNames }
+
+    /**
+     * Builds content findings grouped by generated Kotlin file.
+     */
+    private fun contentFindings(
+        missingBodies: List<String>,
+        shapeMismatchFiles: List<String>,
+    ): List<EvaluationWarning> =
+        buildList {
+            missingBodies
+                .groupingBy { it.substringBefore(MEMBER_PATH_SEPARATOR) }
+                .eachCount()
+                .forEach { (path, count) ->
+                    add(
+                        EvaluationWarning(
+                            code = "missing_kotlin_body",
+                            message = "Generated Kotlin appears to be missing bodies for Java methods with executable bodies.",
+                            path = path,
+                            count = count,
+                        ),
+                    )
+                }
+            shapeMismatchFiles.forEach { path ->
+                add(
+                    EvaluationWarning(
+                        code = "content_shape_mismatch",
+                        message =
+                            "Generated Kotlin lost one or more Java body-shape signals such as returns, " +
+                                "branches, loops, throws, tries, or literals.",
+                        path = path,
+                    ),
+                )
+            }
+        }
+
+    /**
+     * Builds nullability findings grouped by generated Kotlin file.
+     */
+    private fun nullabilityFindings(
+        nullableNotPreserved: List<String>,
+        notNullBecameNullable: List<String>,
+    ): List<EvaluationWarning> =
+        buildList {
+            nullableNotPreserved
+                .groupingBy { it.substringBefore(MEMBER_PATH_SEPARATOR) }
+                .eachCount()
+                .forEach { (path, count) ->
+                    add(
+                        EvaluationWarning(
+                            code = "nullable_annotation_not_preserved",
+                            message = "Java nullable annotations were not reflected as nullable Kotlin declarations.",
+                            path = path,
+                            count = count,
+                        ),
+                    )
+                }
+            notNullBecameNullable
+                .groupingBy { it.substringBefore(MEMBER_PATH_SEPARATOR) }
+                .eachCount()
+                .forEach { (path, count) ->
+                    add(
+                        EvaluationWarning(
+                            code = "not_null_annotation_became_nullable",
+                            message = "Java not-null annotations were converted to nullable Kotlin declarations.",
+                            path = path,
+                            count = count,
+                        ),
+                    )
+                }
+        }
+
+    /**
      * Scans quality warnings for one generated Kotlin file.
      */
     private fun scanQuality(file: DiscoveredSourceFile): QualityFileMetrics =
@@ -321,5 +520,18 @@ private data class SourcePathIndex(
 data class EvaluationMetrics(
     val fileCoverage: FileCoverageMetrics,
     val structure: StructuralMetrics,
+    val content: ContentMetrics,
+    val nullability: NullabilityMetrics,
     val quality: QualityMetrics,
 )
+
+/**
+ * Java/Kotlin parser structures for one matched generated file.
+ */
+private data class MatchedSourceStructure(
+    val path: String,
+    val java: SourceStructure,
+    val kotlin: SourceStructure,
+)
+
+private const val MEMBER_PATH_SEPARATOR = "#"

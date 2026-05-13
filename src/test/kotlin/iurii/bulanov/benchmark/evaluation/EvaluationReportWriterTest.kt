@@ -34,9 +34,13 @@ class EvaluationReportWriterTest {
         assertContains(json, "\"conversion\"")
         assertContains(json, "\"file_coverage\"")
         assertContains(json, "\"quality\"")
+        assertContains(json, "\"content\"")
+        assertContains(json, "\"nullability\"")
         assertContains(json, "\"analysis\"")
         assertContains(json, "\"analysis_method\":\"structural_heuristics\"")
         assertContains(json, "\"missing_output_count\":1")
+        assertContains(json, "\"content_warning_count\":1")
+        assertContains(json, "\"nullability_warning_count\":1")
         assertContains(json, "\"quality_warning_count\":1")
         assertContains(json, "\"java_bean_accessors_missing_as_functions\"")
         assertContains(json, "\"java_bean_accessors_backed_by_kotlin_properties\"")
@@ -63,6 +67,12 @@ class EvaluationReportWriterTest {
         assertContains(summary, "Java classes/records missing in Kotlin")
         assertContains(summary, "#### Methods and functions")
         assertContains(summary, "Kotlin functions not present as Java methods")
+        assertContains(summary, "## Content Preservation")
+        assertContains(summary, "Missing Kotlin bodies: `1`")
+        assertContains(summary, "`App.kt#run`")
+        assertContains(summary, "## Nullability Signals")
+        assertContains(summary, "Nullable annotations not preserved: `1`")
+        assertContains(summary, "`App.kt#name`")
         assertContains(summary, "Missing generated Kotlin files: `1`")
         assertContains(summary, "`App.kt`")
         assertContains(summary, "`generated_kotlin_directory_missing`")
@@ -77,6 +87,8 @@ class EvaluationReportWriterTest {
         val summary = reportDirectory.resolve("summary.md").readText()
         assertContains(summary, "Static J2K generated Kotlin for every configured Java input")
         assertContains(summary, "Coverage: `1` of `1` configured Java inputs")
+        assertContains(summary, "## Content Preservation")
+        assertContains(summary, "## Nullability Signals")
         assertContains(summary, "## Notable Failures")
         assertContains(summary, "- None")
         assertFalse(summary.contains("Missing generated Kotlin files"))
@@ -99,6 +111,8 @@ class EvaluationReportWriterTest {
             conversion = sampleConversion(),
             fileCoverage = sampleFileCoverage(),
             structure = sampleStructure(),
+            content = sampleContent(),
+            nullability = sampleNullability(),
             quality = sampleQuality(),
             status = EvaluationStatus.COMPLETED_WITH_WARNINGS,
             warnings = sampleWarnings(),
@@ -157,6 +171,8 @@ class EvaluationReportWriterTest {
                     kotlinOnlyPublicApiNames = emptyList(),
                     nameDiffs = emptyNameDiffs(),
                 ),
+            content = emptyContent(),
+            nullability = emptyNullability(),
             quality = emptyQuality(),
             status = EvaluationStatus.COMPLETED,
             warnings = emptyList(),
@@ -256,6 +272,98 @@ class EvaluationReportWriterTest {
             classLikeToObjectNames = emptyList(),
             javaBeanAccessorNames = emptyList(),
             functions = StructuralNameDiff(missingInKotlin = emptyList(), kotlinOnly = emptyList()),
+        )
+
+    /**
+     * Builds sample content metrics with one body preservation finding.
+     */
+    private fun sampleContent(): ContentMetrics =
+        ContentMetrics(
+            matchedFileCount = 1,
+            javaNonEmptyMethodCount = 1,
+            kotlinNonEmptyFunctionCount = 0,
+            javaEmptyMethodCount = 0,
+            kotlinEmptyFunctionCount = 1,
+            missingKotlinBodies = listOf("App.kt#run"),
+            contentShapeMismatchFiles = emptyList(),
+            javaReturnCount = 1,
+            kotlinReturnCount = 0,
+            javaBranchCount = 0,
+            kotlinBranchCount = 0,
+            javaLoopCount = 0,
+            kotlinLoopCount = 0,
+            javaThrowCount = 0,
+            kotlinThrowCount = 0,
+            javaTryCount = 0,
+            kotlinTryCount = 0,
+            findings =
+                listOf(
+                    EvaluationWarning(
+                        code = "missing_kotlin_body",
+                        message = "Generated Kotlin appears to be missing bodies for Java methods with executable bodies.",
+                        path = "App.kt",
+                        count = 1,
+                    ),
+                ),
+        )
+
+    /**
+     * Builds sample nullability metrics with one annotation preservation finding.
+     */
+    private fun sampleNullability(): NullabilityMetrics =
+        NullabilityMetrics(
+            javaNullableAnnotationCount = 1,
+            javaNotNullAnnotationCount = 0,
+            kotlinNullableTypeCount = 0,
+            nullableAnnotationsNotPreserved = listOf("App.kt#name"),
+            notNullAnnotationsBecameNullable = emptyList(),
+            findings =
+                listOf(
+                    EvaluationWarning(
+                        code = "nullable_annotation_not_preserved",
+                        message = "Java nullable annotations were not reflected as nullable Kotlin declarations.",
+                        path = "App.kt",
+                        count = 1,
+                    ),
+                ),
+        )
+
+    /**
+     * Builds empty content metrics.
+     */
+    private fun emptyContent(): ContentMetrics =
+        ContentMetrics(
+            matchedFileCount = 1,
+            javaNonEmptyMethodCount = 1,
+            kotlinNonEmptyFunctionCount = 1,
+            javaEmptyMethodCount = 0,
+            kotlinEmptyFunctionCount = 0,
+            missingKotlinBodies = emptyList(),
+            contentShapeMismatchFiles = emptyList(),
+            javaReturnCount = 1,
+            kotlinReturnCount = 1,
+            javaBranchCount = 0,
+            kotlinBranchCount = 0,
+            javaLoopCount = 0,
+            kotlinLoopCount = 0,
+            javaThrowCount = 0,
+            kotlinThrowCount = 0,
+            javaTryCount = 0,
+            kotlinTryCount = 0,
+            findings = emptyList(),
+        )
+
+    /**
+     * Builds empty nullability metrics.
+     */
+    private fun emptyNullability(): NullabilityMetrics =
+        NullabilityMetrics(
+            javaNullableAnnotationCount = 0,
+            javaNotNullAnnotationCount = 0,
+            kotlinNullableTypeCount = 0,
+            nullableAnnotationsNotPreserved = emptyList(),
+            notNullAnnotationsBecameNullable = emptyList(),
+            findings = emptyList(),
         )
 
     /**

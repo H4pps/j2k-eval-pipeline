@@ -65,6 +65,8 @@ class EvaluatorRunner(
             conversion = conversion,
             fileCoverage = metrics.fileCoverage,
             structure = metrics.structure,
+            content = metrics.content,
+            nullability = metrics.nullability,
             quality = metrics.quality,
             status = if (warnings.isEmpty()) EvaluationStatus.COMPLETED else EvaluationStatus.COMPLETED_WITH_WARNINGS,
             warnings = warnings,
@@ -88,6 +90,8 @@ class EvaluatorRunner(
             addReportIdentityWarnings(benchmarkId, checkout, paths.checkoutReport, conversion, paths.conversionReport)
             addConversionWarnings(conversion)
             addFileCoverageWarnings(metrics.fileCoverage)
+            addAll(metrics.content.findings)
+            addAll(metrics.nullability.findings)
             addAll(metrics.quality.findings)
         }
 
