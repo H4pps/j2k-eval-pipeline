@@ -1,0 +1,23 @@
+id: j2k-edge-cases
+name: J2K Edge Cases
+role: edge-case
+description: Custom Java dataset for targeted static J2K stress testing.
+
+repository:
+  upstream: https://github.com/H4pps/j2k-edge-cases
+  source: https://github.com/H4pps/j2k-edge-cases
+  ref: 10b5dfaaa25e8f0c393392fc39825792fdb5e4c8
+  branch: main
+
+checkout:
+  directory: build/benchmarks/j2k-edge-cases/source
+
+java:
+  sourceRoots:
+    - src/main/java
+
+build:
+  tool: gradle-wrapper
+  workingDirectory: .
+  commands:
+    - ./gradlew test

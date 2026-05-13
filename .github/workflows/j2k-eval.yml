@@ -12,6 +12,7 @@ on:
       - src/**
       - benchmarks/hikaricp.yml
       - benchmarks/spring-petclinic.yml
+      - benchmarks/j2k-edge-cases.yml
       - j2k-runner-plugin/**
       - .github/workflows/j2k-eval.yml
   pull_request:
@@ -24,6 +25,7 @@ on:
       - src/**
       - benchmarks/hikaricp.yml
       - benchmarks/spring-petclinic.yml
+      - benchmarks/j2k-edge-cases.yml
       - j2k-runner-plugin/**
       - .github/workflows/j2k-eval.yml
 
@@ -40,6 +42,8 @@ jobs:
             config: benchmarks/hikaricp.yml
           - benchmark: spring-petclinic
             config: benchmarks/spring-petclinic.yml
+          - benchmark: j2k-edge-cases
+            config: benchmarks/j2k-edge-cases.yml
 
     steps:
       - name: Checkout harness repository
