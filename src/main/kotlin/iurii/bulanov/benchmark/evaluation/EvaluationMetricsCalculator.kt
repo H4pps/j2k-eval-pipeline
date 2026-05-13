@@ -20,16 +20,15 @@ class EvaluationMetricsCalculator(
         sourceRoots: List<String>,
     ): EvaluationMetrics {
         val pathIndex = sourcePathIndex(javaFiles, kotlinFiles, sourceRoots)
-        val javaStructures = javaFiles.map { scanner.scanJava(it.absolutePath.readText()) }
-        val kotlinStructures = kotlinFiles.map { scanner.scanKotlin(it.absolutePath.readText()) }
+        val matchedStructures = matchedStructures(pathIndex)
         val qualityFiles = kotlinFiles.map { scanQuality(it) }
-        val structure = structure(javaStructures, kotlinStructures)
+        val structure = structure(matchedStructures)
 
         return EvaluationMetrics(
             fileCoverage = fileCoverage(javaFiles, kotlinFiles, pathIndex),
             structure = structure,
-            content = content(pathIndex, structure.nameDiffs.javaBeanAccessorNames.toSet()),
-            nullability = nullability(pathIndex),
+            content = content(matchedStructures),
+            nullability = nullability(matchedStructures),
             quality = quality(qualityFiles),
         )
     }
@@ -140,10 +139,9 @@ class EvaluationMetricsCalculator(
     /**
      * Calculates lightweight structural preservation metrics.
      */
-    private fun structure(
-        javaStructures: List<SourceStructure>,
-        kotlinStructures: List<SourceStructure>,
-    ): StructuralMetrics {
+    private fun structure(matchedStructures: List<MatchedSourceStructure>): StructuralMetrics {
+        val javaStructures = matchedStructures.map { it.java }
+        val kotlinStructures = matchedStructures.map { it.kotlin }
         val javaApiNames = javaStructures.flatMap { it.publicApiNames }.toSet()
         val kotlinApiNames = kotlinStructures.flatMap { it.publicApiNames }.toSet()
         val nameDiffs = structuralNameDiffs(javaStructures, kotlinStructures)
@@ -226,15 +224,37 @@ class EvaluationMetricsCalculator(
     private fun ownerScopedPropertyBackedAccessorNames(
         javaStructures: List<SourceStructure>,
         kotlinStructures: List<SourceStructure>,
-    ): Set<String> {
-        val kotlinPropertiesByOwner = kotlinStructures.mergedPropertyNamesByOwner()
-        return javaStructures
-            .flatMap { it.javaBeanAccessorPropertyNamesByOwner.entries }
-            .flatMap { (ownerName, accessors) ->
-                val propertyNames = kotlinPropertiesByOwner[ownerName].orEmpty()
-                accessors.entries.filter { (_, candidates) -> candidates.any(propertyNames::contains) }.map { it.key }
+    ): Set<String> =
+        javaStructures
+            .flatMap { javaStructure ->
+                kotlinStructures.flatMap { kotlinStructure -> propertyBackedAccessorNames(javaStructure, kotlinStructure) }
             }.toSet()
+
+    /**
+     * Finds JavaBean accessor names represented by Kotlin properties.
+     */
+    private fun propertyBackedAccessorNames(
+        javaStructure: SourceStructure,
+        kotlinStructure: SourceStructure,
+    ): Set<String> {
+        val kotlinPropertiesByOwner = kotlinStructure.kotlinPropertyRecords.groupBy { it.ownerName }
+        return javaStructure.javaBeanAccessorRecords
+            .filter { accessor ->
+                val ownerProperties = kotlinPropertiesByOwner[accessor.ownerName].orEmpty()
+                val topLevelProperties = kotlinPropertiesByOwner[null].orEmpty()
+                accessor.isBackedBy(ownerProperties) ||
+                    (accessor.isStatic && accessor.isBackedBy(topLevelProperties))
+            }.map { it.methodName }
+            .toSet()
     }
+
+    /**
+     * Returns whether a JavaBean accessor is represented by one of [properties].
+     */
+    private fun JavaBeanAccessorRecord.isBackedBy(properties: List<KotlinPropertyRecord>): Boolean =
+        properties
+            .filter { property -> !property.isPrivate || isPrivate }
+            .any { property -> property.name in propertyNames }
 
     /**
      * Finds Kotlin property names backing JavaBean accessors that were matched by method name.
@@ -242,55 +262,24 @@ class EvaluationMetricsCalculator(
     private fun propertyNamesBackingAccessors(
         javaStructures: List<SourceStructure>,
         kotlinStructures: List<SourceStructure>,
-        accessorNames: Set<String>,
+        propertyBackedAccessorNames: Set<String>,
     ): Set<String> {
-        val kotlinPropertiesByOwner = kotlinStructures.mergedPropertyNamesByOwner()
+        val kotlinPropertyNames = kotlinStructures.flatMap { it.propertyNames }.toSet()
         return javaStructures
-            .flatMap { it.javaBeanAccessorPropertyNamesByOwner.entries }
-            .flatMap { (ownerName, accessors) ->
-                val propertyNames = kotlinPropertiesByOwner[ownerName].orEmpty()
-                accessors
-                    .filterKeys { it in accessorNames }
-                    .values
-                    .flatten()
-                    .filter { it in propertyNames }
-            }.toSet()
-    }
-
-    /**
-     * Merges owner-scoped Kotlin property names across generated files.
-     */
-    private fun List<SourceStructure>.mergedPropertyNamesByOwner(): Map<String, Set<String>> =
-        flatMap { it.propertyNamesByOwner.entries }
-            .groupBy({ it.key }, { it.value })
-            .mapValues { (_, propertySets) -> propertySets.flatten().toSet() }
-
-    /**
-     * Builds a deterministic two-way name diff.
-     */
-    private fun nameDiff(
-        javaNames: Collection<String>,
-        kotlinNames: Collection<String>,
-    ): StructuralNameDiff {
-        val javaSet = javaNames.toSet()
-        val kotlinSet = kotlinNames.toSet()
-        return StructuralNameDiff(
-            missingInKotlin = javaSet.minus(kotlinSet).sorted(),
-            kotlinOnly = kotlinSet.minus(javaSet).sorted(),
-        )
+            .flatMap { it.javaBeanAccessorPropertyNames.entries }
+            .filter { (accessorName, _) -> accessorName in propertyBackedAccessorNames }
+            .flatMap { (_, propertyNames) -> propertyNames.filter { it in kotlinPropertyNames } }
+            .toSet()
     }
 
     /**
      * Calculates parser-backed body and control-flow preservation metrics across matched files.
      */
-    private fun content(
-        pathIndex: SourcePathIndex,
-        propertyBackedAccessorNames: Set<String>,
-    ): ContentMetrics {
-        val pairs = matchedStructures(pathIndex)
+    private fun content(pairs: List<MatchedSourceStructure>): ContentMetrics {
         val missingBodies =
             pairs
                 .flatMap { pair ->
+                    val propertyBackedAccessorNames = propertyBackedAccessorNames(pair.java, pair.kotlin)
                     pair.java.content.nonEmptyFunctionNames
                         .filterNot { name -> name in pair.kotlin.content.nonEmptyFunctionNames || name in propertyBackedAccessorNames }
                         .map { name -> "${pair.path}#$name" }
@@ -298,6 +287,7 @@ class EvaluationMetricsCalculator(
         val shapeMismatchFiles =
             pairs
                 .filter { pair ->
+                    val propertyBackedAccessorNames = propertyBackedAccessorNames(pair.java, pair.kotlin)
                     pair.java.content.hasNonPropertyBackedExecutableMethods(propertyBackedAccessorNames) &&
                         pair.java.content.hasShapeMissingFrom(pair.kotlin.content)
                 }.map { it.path }
@@ -328,8 +318,7 @@ class EvaluationMetricsCalculator(
     /**
      * Calculates parser-backed Java annotation to Kotlin nullable-type preservation metrics.
      */
-    private fun nullability(pathIndex: SourcePathIndex): NullabilityMetrics {
-        val pairs = matchedStructures(pathIndex)
+    private fun nullability(pairs: List<MatchedSourceStructure>): NullabilityMetrics {
         val nullableNotPreserved =
             pairs
                 .flatMap { pair ->
@@ -352,6 +341,21 @@ class EvaluationMetricsCalculator(
             nullableAnnotationsNotPreserved = nullableNotPreserved,
             notNullAnnotationsBecameNullable = notNullBecameNullable,
             findings = nullabilityFindings(nullableNotPreserved, notNullBecameNullable),
+        )
+    }
+
+    /**
+     * Builds a deterministic two-way name diff.
+     */
+    private fun nameDiff(
+        javaNames: Collection<String>,
+        kotlinNames: Collection<String>,
+    ): StructuralNameDiff {
+        val javaSet = javaNames.toSet()
+        val kotlinSet = kotlinNames.toSet()
+        return StructuralNameDiff(
+            missingInKotlin = javaSet.minus(kotlinSet).sorted(),
+            kotlinOnly = kotlinSet.minus(javaSet).sorted(),
         )
     }
 

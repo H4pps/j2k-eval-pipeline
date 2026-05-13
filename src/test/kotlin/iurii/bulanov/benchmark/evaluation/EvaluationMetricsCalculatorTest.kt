@@ -66,6 +66,43 @@ class EvaluationMetricsCalculatorTest {
         assertFalse("getTitle" in metrics.structure.nameDiffs.javaBeanAccessorNames)
     }
 
+    @Test
+    fun `maps private and static Java accessors converted to Kotlin properties`() {
+        val root = Files.createTempDirectory("evaluation-accessor-properties-")
+        val javaRoot = root.resolve("checkout/src/main/java/com/example").apply { createDirectories() }
+        val kotlinRoot = root.resolve("generated/com/example").apply { createDirectories() }
+        val appJava = javaRoot.resolve("App.java")
+        val appKotlin = kotlinRoot.resolve("App.kt")
+        appJava.writeText(
+            """
+            package com.example;
+            public class App {
+              private String getHidden() { return "x"; }
+              static String getGlobalName() { return "x"; }
+            }
+            """.trimIndent(),
+        )
+        appKotlin.writeText(
+            """
+            package com.example
+            val globalName: String = "x"
+            class App { private val hidden: String = "x" }
+            """.trimIndent(),
+        )
+
+        val metrics =
+            EvaluationMetricsCalculator().calculate(
+                javaFiles = listOf(discovered(appJava, root.resolve("checkout"))),
+                kotlinFiles = listOf(discovered(appKotlin, root.resolve("generated"))),
+                sourceRoots = listOf("src/main/java"),
+            )
+
+        assertContains(metrics.structure.nameDiffs.javaBeanAccessorNames, "getHidden")
+        assertContains(metrics.structure.nameDiffs.javaBeanAccessorNames, "getGlobalName")
+        assertFalse("getHidden" in metrics.structure.nameDiffs.functions.missingInKotlin)
+        assertFalse("getGlobalName" in metrics.structure.nameDiffs.functions.missingInKotlin)
+    }
+
     /**
      * Creates a temporary source fixture with matched, missing, and unexpected outputs.
      */
@@ -149,14 +186,14 @@ class EvaluationMetricsCalculatorTest {
     private fun assertStructure(metrics: EvaluationMetrics) {
         assertTrue(metrics.structure.javaTopLevelDeclarationCount >= 2)
         assertTrue(metrics.structure.kotlinTopLevelDeclarationCount >= 1)
-        assertContains(metrics.structure.missingPublicApiNames, "Missing")
+        assertFalse("Missing" in metrics.structure.missingPublicApiNames)
         assertContains(metrics.structure.missingPublicApiNames, "isReady")
         assertFalse("getTitle" in metrics.structure.missingPublicApiNames)
         assertFalse("setEnabled" in metrics.structure.missingPublicApiNames)
         assertContains(metrics.structure.kotlinOnlyPublicApiNames, "newHelper")
         assertFalse("title" in metrics.structure.kotlinOnlyPublicApiNames)
         assertFalse("enabled" in metrics.structure.kotlinOnlyPublicApiNames)
-        assertContains(metrics.structure.nameDiffs.classLike.missingInKotlin, "Missing")
+        assertFalse("Missing" in metrics.structure.nameDiffs.classLike.missingInKotlin)
         assertContains(metrics.structure.nameDiffs.classLikeToObjectNames, "Utility")
         assertContains(metrics.structure.nameDiffs.javaBeanAccessorNames, "getTitle")
         assertContains(metrics.structure.nameDiffs.javaBeanAccessorNames, "setEnabled")

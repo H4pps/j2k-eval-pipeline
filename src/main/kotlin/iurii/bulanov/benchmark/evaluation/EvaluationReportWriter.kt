@@ -165,7 +165,8 @@ class EvaluationReportWriter(
         appendLine()
         appendLine(
             "Generated Kotlin is compared with " +
-                "the original Java source using deterministic structural heuristics.",
+                "the original Java source using deterministic structural heuristics. Name-level structural diffs are " +
+                "calculated only for matched Java/Kotlin files; missing generated files are reported under File Coverage.",
         )
         appendLine()
         appendLine("- Java declarations: `${structure.javaTopLevelDeclarationCount}`")

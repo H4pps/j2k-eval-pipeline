@@ -79,6 +79,7 @@ class SourceTextScanner {
         val methodDeclarations = unit.findAll(MethodDeclaration::class.java)
         val methodNames = methodDeclarations.map { it.nameAsString }.toSet()
         val declarationNames = classNames + recordNames + interfaceNames + enumNames
+        val javaBeanAccessorRecords = methodDeclarations.javaBeanAccessorRecords()
         val javaBeanAccessorPropertyNamesByOwner = methodDeclarations.javaBeanAccessorPropertyNamesByOwner()
         val content = unit.javaContentProfile(methodDeclarations)
         val nullability = unit.javaNullabilityProfile(methodDeclarations)
@@ -99,6 +100,8 @@ class SourceTextScanner {
             propertyNamesByOwner = emptyMap(),
             javaBeanAccessorPropertyNames = javaBeanAccessorPropertyNamesByOwner.flattenValues(),
             javaBeanAccessorPropertyNamesByOwner = javaBeanAccessorPropertyNamesByOwner,
+            kotlinPropertyRecords = emptyList(),
+            javaBeanAccessorRecords = javaBeanAccessorRecords,
             content = content,
             nullability = nullability,
             publicApiNames = declarationNames + methodNames,
@@ -122,7 +125,8 @@ class SourceTextScanner {
                 .toSet()
         val functionNames = file.collectDescendantsOfType<KtNamedFunction>().mapNotNull { it.name }.toSet()
         val propertyRecords = file.kotlinPropertyRecords()
-        val propertyNames = propertyRecords.map { it.name }.toSet()
+        val publicPropertyRecords = propertyRecords.filterNot { it.isPrivate }
+        val propertyNames = publicPropertyRecords.map { it.name }.toSet()
         val declarationNames = classNames + interfaceNames + enumNames + objectNames
         val content = file.kotlinContentProfile()
         val nullability = file.kotlinNullabilityProfile()
@@ -140,9 +144,11 @@ class SourceTextScanner {
             topLevelNames = declarationNames,
             functionNames = functionNames,
             propertyNames = propertyNames,
-            propertyNamesByOwner = propertyRecords.groupByOwner(),
+            propertyNamesByOwner = publicPropertyRecords.groupByOwner(),
             javaBeanAccessorPropertyNames = emptyMap(),
             javaBeanAccessorPropertyNamesByOwner = emptyMap(),
+            kotlinPropertyRecords = propertyRecords,
+            javaBeanAccessorRecords = emptyList(),
             content = content,
             nullability = nullability,
             publicApiNames = declarationNames + functionNames + propertyNames,
@@ -283,19 +289,33 @@ class SourceTextScanner {
     }
 
     /**
-     * Collects public Kotlin member, top-level, and primary-constructor property records.
+     * Collects Kotlin member, top-level, and primary-constructor property records with visibility metadata.
      */
     private fun KtFile.kotlinPropertyRecords(): List<KotlinPropertyRecord> {
         val declaredProperties =
             collectDescendantsOfType<KtProperty>()
-                .filterNot { it.hasModifier(KtTokens.PRIVATE_KEYWORD) }
                 .filter { it.parent is KtFile || it.parent is KtClassBody }
-                .mapNotNull { property -> property.name?.let { KotlinPropertyRecord(property.containingTypeName(), it) } }
+                .mapNotNull { property ->
+                    property.name?.let {
+                        KotlinPropertyRecord(
+                            ownerName = property.containingTypeName(),
+                            name = it,
+                            isPrivate = property.hasModifier(KtTokens.PRIVATE_KEYWORD),
+                        )
+                    }
+                }
         val constructorProperties =
             collectDescendantsOfType<KtParameter>()
-                .filterNot { it.hasModifier(KtTokens.PRIVATE_KEYWORD) }
                 .filter { it.hasValOrVar() }
-                .mapNotNull { parameter -> parameter.name?.let { KotlinPropertyRecord(parameter.containingTypeName(), it) } }
+                .mapNotNull { parameter ->
+                    parameter.name?.let {
+                        KotlinPropertyRecord(
+                            ownerName = parameter.containingTypeName(),
+                            name = it,
+                            isPrivate = parameter.hasModifier(KtTokens.PRIVATE_KEYWORD),
+                        )
+                    }
+                }
         return declaredProperties + constructorProperties
     }
 
@@ -466,7 +486,21 @@ class SourceTextScanner {
         while (current != null) {
             when (current) {
                 is KtClass -> return current.name
-                is KtObjectDeclaration -> return current.name
+                is KtObjectDeclaration -> return if (current.isCompanion()) current.containingClassName() else current.name
+            }
+            current = current.parent
+        }
+        return null
+    }
+
+    /**
+     * Finds the Kotlin class or interface that owns this companion object.
+     */
+    private fun KtObjectDeclaration.containingClassName(): String? {
+        var current = parent
+        while (current != null) {
+            if (current is KtClass) {
+                return current.name
             }
             current = current.parent
         }
@@ -477,12 +511,25 @@ class SourceTextScanner {
      * Maps JavaBean accessor method names to implied Kotlin property names by containing type.
      */
     private fun List<MethodDeclaration>.javaBeanAccessorPropertyNamesByOwner(): Map<String, Map<String, Set<String>>> =
+        javaBeanAccessorRecords()
+            .groupBy { it.ownerName }
+            .mapValues { (_, accessors) -> accessors.associate { it.methodName to it.propertyNames } }
+
+    /**
+     * Maps JavaBean accessor methods to implied Kotlin property names with visibility/static metadata.
+     */
+    private fun List<MethodDeclaration>.javaBeanAccessorRecords(): List<JavaBeanAccessorRecord> =
         mapNotNull { method ->
             val ownerName = method.containingTypeName() ?: return@mapNotNull null
             val propertyNames = method.javaBeanAccessorPropertyNames().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-            JavaBeanAccessorRecord(ownerName, method.nameAsString, propertyNames)
-        }.groupBy { it.ownerName }
-            .mapValues { (_, accessors) -> accessors.associate { it.methodName to it.propertyNames } }
+            JavaBeanAccessorRecord(
+                ownerName = ownerName,
+                methodName = method.nameAsString,
+                propertyNames = propertyNames,
+                isPrivate = method.isPrivate,
+                isStatic = method.isStatic,
+            )
+        }
 
     /**
      * Finds the nearest containing Java type declaration name.
@@ -755,18 +802,21 @@ class SourceTextScanner {
 /**
  * Kotlin property name with its nearest containing type, if any.
  */
-private data class KotlinPropertyRecord(
+data class KotlinPropertyRecord(
     val ownerName: String?,
     val name: String,
+    val isPrivate: Boolean,
 )
 
 /**
  * JavaBean accessor mapping with its nearest containing Java type.
  */
-private data class JavaBeanAccessorRecord(
+data class JavaBeanAccessorRecord(
     val ownerName: String,
     val methodName: String,
     val propertyNames: Set<String>,
+    val isPrivate: Boolean,
+    val isStatic: Boolean,
 )
 
 /**
@@ -788,6 +838,8 @@ data class SourceStructure(
     val propertyNamesByOwner: Map<String, Set<String>>,
     val javaBeanAccessorPropertyNames: Map<String, Set<String>>,
     val javaBeanAccessorPropertyNamesByOwner: Map<String, Map<String, Set<String>>>,
+    val kotlinPropertyRecords: List<KotlinPropertyRecord>,
+    val javaBeanAccessorRecords: List<JavaBeanAccessorRecord>,
     val content: SourceContentProfile,
     val nullability: SourceNullabilityProfile,
     val publicApiNames: Set<String>,
