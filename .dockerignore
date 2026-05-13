@@ -1,0 +1,11 @@
+.git
+.gradle
+.intellijPlatform
+.kotlin
+.local-run
+.act
+.idea
+build
+out
+*.iml
+.DS_Store

@@ -41,14 +41,14 @@ class CheckoutValidator(
         )
         runRequired(
             processExecutor.run(listOf("git", "-C", checkoutDirectory.toString(), "checkout", "--force", config.repository.ref)),
-            "failed to checkout pinned benchmark ref",
+            "failed to checkout configured benchmark ref",
         )
 
         val headResult = processExecutor.run(listOf("git", "-C", checkoutDirectory.toString(), "rev-parse", "HEAD"))
         runRequired(headResult, "failed to resolve checked out commit")
         val actualRef = headResult.output.trim()
         if (actualRef != config.repository.ref) {
-            throw CheckoutException("pinned ref verification failed: expected ${config.repository.ref}, got $actualRef")
+            throw CheckoutException("checkout ref verification failed: expected ${config.repository.ref}, got $actualRef")
         }
         logger.info(
             event = "benchmark_checkout_verified",

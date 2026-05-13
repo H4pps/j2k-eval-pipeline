@@ -85,9 +85,14 @@ class BenchmarkCheckoutRunner(
                 appendLine("- ID: `${result.config.id}`")
                 appendLine("- Name: `${result.config.name}`")
                 appendLine("- Role: `${result.config.role}`")
-                appendLine("- Repository source: `${result.config.repository.source}`")
-                appendLine("- Repository upstream: `${result.config.repository.upstream}`")
-                appendLine("- Pinned ref: `${result.config.repository.ref}`")
+                appendLine(
+                    "- Repository source: " +
+                        "[${result.config.repository.source}](${result.config.repository.source})",
+                )
+                appendLine(
+                    "- Repository upstream: " +
+                        "[${result.config.repository.upstream}](${result.config.repository.upstream})",
+                )
                 appendLine("- Branch: `${result.config.repository.branch}`")
                 appendLine("- Checkout directory: `${result.config.checkout.directory}`")
                 appendLine("- Source roots: `${result.config.java.sourceRoots.joinToString(", ")}`")
