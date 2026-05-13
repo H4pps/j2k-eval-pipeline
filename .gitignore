@@ -1,6 +1,8 @@
 .gradle
 build/
-!gradle/wrapper/gradle-wrapper.jar
+.intellijPlatform/
+.local-run/
+.act/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
@@ -49,7 +51,8 @@ bin/
 __MACOSX/
 .AppleDouble
 .LSOverride
-Icon[]
+Icon[
+]
 
 # Resource forks
 ._*
@@ -70,7 +73,8 @@ Icon[]
 .file
 .disk_label*
 lost+found
-.HFS+ Private Directory Data[]
+.HFS+ Private Directory Data[
+]
 
 # Directories potentially created on remote AFP share
 .AppleDB
@@ -163,6 +167,9 @@ nohup.out
 *.zip
 *.tar.gz
 *.rar
+
+# The Gradle wrapper jar is required for ./gradlew in CI.
+!gradle/wrapper/gradle-wrapper.jar
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
