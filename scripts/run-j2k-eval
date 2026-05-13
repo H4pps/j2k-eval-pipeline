@@ -12,6 +12,7 @@ usage() {
     "  ./scripts/run-j2k-eval j2k-edge-cases [--checkout-only]" \
     "  ./scripts/run-j2k-eval all [--checkout-only]" \
     "  ./scripts/run-j2k-eval benchmarks/<name>.yml [--checkout-only]" \
+    "  ./scripts/run-j2k-eval hikaricp --zip-output build/local-artifacts/hikaricp.zip" \
     "" \
     "This runs the same local pipeline steps as GitHub Actions:" \
     "  checkout-benchmark -> convertBenchmark -> evaluate"
@@ -43,6 +44,42 @@ benchmark_id_from_config() {
 # because local Docker DNS is less reliable than direct JetBrains repository URLs.
 run_gradle() {
   ./gradlew --no-daemon --console=plain -Porg.jetbrains.intellij.platform.useCacheRedirector=false "$@"
+}
+
+# Adds a path to the zip input list if the path exists.
+add_existing_path() {
+  local path="$1"
+
+  if [[ -e "${path}" ]]; then
+    package_paths+=("${path}")
+  fi
+}
+
+# Writes a compact artifact containing only reports, logs, and generated Kotlin.
+package_outputs() {
+  local zip_output="$1"
+  shift
+
+  package_paths=()
+  local benchmark_id
+
+  for benchmark_id in "$@"; do
+    add_existing_path "build/benchmarks/${benchmark_id}/checkout.json"
+    add_existing_path "build/j2k/${benchmark_id}/conversion.json"
+    add_existing_path "build/j2k/${benchmark_id}/logs"
+    add_existing_path "build/j2k/${benchmark_id}/generated-kotlin"
+    add_existing_path "build/reports/j2k-eval/${benchmark_id}"
+  done
+
+  if [[ "${#package_paths[@]}" -eq 0 ]]; then
+    echo "No report or generated Kotlin paths were found to package." >&2
+    exit 1
+  fi
+
+  mkdir -p "$(dirname "${zip_output}")"
+  rm -f "${zip_output}"
+  zip -qr "${zip_output}" "${package_paths[@]}"
+  echo "==> Wrote ${zip_output}"
 }
 
 # Executes the checkout, conversion, and evaluation steps for one benchmark.
@@ -80,9 +117,19 @@ main() {
   shift
 
   local checkout_only=0
+  local zip_output=""
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
       --checkout-only) checkout_only=1 ;;
+      --zip-output)
+        if [[ "${2:-}" == "" ]]; then
+          echo "Missing value for --zip-output" >&2
+          usage >&2
+          exit 1
+        fi
+        zip_output="$2"
+        shift
+        ;;
       *)
         echo "Unknown option: $1" >&2
         usage >&2
@@ -94,13 +141,25 @@ main() {
 
   cd "${REPO_ROOT}"
 
+  local completed_benchmarks=()
   if [[ "${target}" == "all" ]]; then
     local benchmark
     for benchmark in "${DEFAULT_BENCHMARKS[@]}"; do
       run_benchmark "$(benchmark_config "${benchmark}")" "${checkout_only}"
+      completed_benchmarks+=("${benchmark}")
     done
   else
-    run_benchmark "$(benchmark_config "${target}")" "${checkout_only}"
+    local config
+    local benchmark_id
+
+    config="$(benchmark_config "${target}")"
+    benchmark_id="$(benchmark_id_from_config "${config}")"
+    run_benchmark "${config}" "${checkout_only}"
+    completed_benchmarks+=("${benchmark_id}")
+  fi
+
+  if [[ -n "${zip_output}" ]]; then
+    package_outputs "${zip_output}" "${completed_benchmarks[@]}"
   fi
 }
 

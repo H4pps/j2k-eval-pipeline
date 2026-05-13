@@ -25,3 +25,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
+
+COPY . /workspace
+
+RUN chmod +x /workspace/gradlew \
+        /workspace/scripts/docker-run-local \
+        /workspace/scripts/run-j2k-eval \
+    && chmod -R a+rwX /workspace
