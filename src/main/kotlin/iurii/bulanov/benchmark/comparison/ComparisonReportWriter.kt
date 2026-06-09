@@ -70,6 +70,7 @@ class ComparisonReportWriter(
                 "benchmark" to linkedMapOf("id" to comparison.benchmarkId, "name" to comparison.benchmarkName),
                 "kinds" to comparison.kinds.map { it.kind.id },
                 "missing_kinds" to comparison.missingKinds.map { it.id },
+                "low_coverage_kinds" to lowCoverageKinds(comparison.kinds).map { it.kind.id },
                 "sections" to sectionsJson(comparison.kinds),
                 "divergences" to divergencesJson(comparison),
             ),
@@ -90,7 +91,29 @@ class ComparisonReportWriter(
         appendRow("Missing outputs", kinds.map { it.listSize("file_coverage", "missing_kotlin_files").toString() })
         appendRow("`!!` assertions", kinds.map { (it.int("quality", "not_null_assertion_count") ?: "—").toString() })
         appendRow("Evaluator warnings", kinds.map { it.warningCount.toString() })
+        appendLowCoverageWarnings(kinds)
     }
+
+    /**
+     * Flags kinds whose conversion coverage is too low for their quality counts to be comparable
+     * (e.g. "0 `!!`" means nothing when only 1 of 49 files converted).
+     */
+    private fun StringBuilder.appendLowCoverageWarnings(kinds: List<KindEvaluation>) {
+        lowCoverageKinds(kinds).forEach { kind ->
+            appendLine()
+            appendLine(
+                "> ⚠ `${kind.kind.id}` converted only ${matchedOverJava(kind)} files " +
+                    "(${percent(kind.number("file_coverage", "coverage_percent"))}) — " +
+                    "its quality counts are not comparable with the other kinds.",
+            )
+        }
+    }
+
+    /**
+     * Returns the kinds below the coverage threshold for comparable quality metrics.
+     */
+    private fun lowCoverageKinds(kinds: List<KindEvaluation>): List<KindEvaluation> =
+        kinds.filter { (it.number("file_coverage", "coverage_percent") ?: 0.0) < LOW_COVERAGE_WARNING_PERCENT }
 
     /**
      * Appends one mirrored section as a per-kind table.
@@ -211,6 +234,9 @@ class ComparisonReportWriter(
     private fun percent(value: Double?): String = value?.let { String.format(Locale.US, "%.2f%%", it) } ?: "—"
 
     private companion object {
+        /** Below this coverage a kind's quality counts are flagged as not comparable. */
+        private const val LOW_COVERAGE_WARNING_PERCENT = 90.0
+
         private val SECTIONS =
             listOf(
                 ReportSection(

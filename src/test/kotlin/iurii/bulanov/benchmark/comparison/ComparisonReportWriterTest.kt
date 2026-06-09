@@ -46,6 +46,28 @@ class ComparisonReportWriterTest {
     }
 
     @Test
+    fun `flags kinds with low coverage as not comparable`() {
+        val comparison =
+            Comparison(
+                benchmarkId = "sample",
+                benchmarkName = "Sample",
+                kinds =
+                    listOf(
+                        kindEval(ConverterKind.K1_OLD_SMART, status = "partial", coverage = 2.04, matched = 1, missing = emptyList()),
+                        kindEval(ConverterKind.K2, status = "completed", coverage = 100.0, matched = 17, missing = emptyList()),
+                    ),
+                missingKinds = emptyList(),
+            )
+
+        val md = ComparisonReportWriter(logger = NoopLogger).renderMarkdown(comparison)
+        val json = ComparisonReportWriter(logger = NoopLogger).renderJson(comparison)
+
+        assertContains(md, "> ⚠ `k1-old-smart` converted only 1/17 files (2.04%)")
+        assertFalse(md.contains("⚠ `k2`"))
+        assertContains(json, "\"low_coverage_kinds\":[\"k1-old-smart\"]")
+    }
+
+    @Test
     fun `handles no available kinds gracefully`() {
         val comparison = Comparison("sample", "Sample", kinds = emptyList(), missingKinds = ConverterKind.entries)
 
