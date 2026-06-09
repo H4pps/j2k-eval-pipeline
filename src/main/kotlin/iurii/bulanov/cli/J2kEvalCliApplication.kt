@@ -12,6 +12,8 @@ import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
 import iurii.bulanov.benchmark.checkout.BenchmarkCheckoutRunner
 import iurii.bulanov.benchmark.checkout.CheckoutBenchmarkRequest
+import iurii.bulanov.benchmark.comparison.ComparisonRequest
+import iurii.bulanov.benchmark.comparison.ComparisonRunner
 import iurii.bulanov.benchmark.conversion.ConverterKind
 import iurii.bulanov.benchmark.evaluation.EvaluationRequest
 import iurii.bulanov.benchmark.evaluation.EvaluatorRunner
@@ -27,12 +29,18 @@ class J2kEvalCliApplication(
     private val logger: StructuredLogger = JsonLineLogger(),
     private val checkoutRunner: BenchmarkCheckoutRunner = BenchmarkCheckoutRunner(logger = logger),
     private val evaluatorRunner: EvaluatorRunner = EvaluatorRunner(logger = logger),
+    private val comparisonRunner: ComparisonRunner = ComparisonRunner(logger = logger),
 ) {
     /**
      * Parses [args], executes the selected command, and returns a process-style exit code.
      */
     fun run(args: List<String>): Int {
-        val command = J2kEvalCli(checkoutRunner = checkoutRunner, evaluatorRunner = evaluatorRunner)
+        val command =
+            J2kEvalCli(
+                checkoutRunner = checkoutRunner,
+                evaluatorRunner = evaluatorRunner,
+                comparisonRunner = comparisonRunner,
+            )
         return try {
             command.parse(args)
             0
@@ -57,11 +65,13 @@ class J2kEvalCliApplication(
 class J2kEvalCli(
     private val checkoutRunner: BenchmarkCheckoutRunner = BenchmarkCheckoutRunner(),
     private val evaluatorRunner: EvaluatorRunner = EvaluatorRunner(),
+    private val comparisonRunner: ComparisonRunner = ComparisonRunner(),
 ) : CliktCommand(name = "j2k-eval") {
     init {
         subcommands(
             CheckoutCliktCommand(checkoutRunner),
             EvaluateCliktCommand(evaluatorRunner),
+            CompareCliktCommand(comparisonRunner),
         )
     }
 
@@ -130,6 +140,44 @@ private class EvaluateCliktCommand(
                     reportDirectory = reportDirectoryPath,
                     conversionReport = conversionReportPath,
                     checkoutReport = checkoutReportPath,
+                    githubSummaryPath = githubSummaryPath,
+                ),
+            )
+        if (exitCode != 0) {
+            throw ProgramResult(exitCode)
+        }
+    }
+}
+
+/**
+ * Clikt subcommand that compiles per-kind evaluation reports into one comparison.
+ */
+private class CompareCliktCommand(
+    private val runner: ComparisonRunner,
+) : CliktCommand(name = "compare") {
+    private val configPath by option("--config", help = "Path to benchmark YAML config").path().required()
+    private val kinds by
+        option("--kinds", help = "Comma-separated converter kinds to compare")
+            .default(ConverterKind.entries.joinToString(",") { it.id })
+    private val reportDirectoryPath by option("--report-dir", help = "Benchmark report directory holding the per-kind reports").path()
+    private val githubSummaryPath by option("--github-summary", help = "Path to GitHub step summary output").path()
+
+    /**
+     * Compiles the comparison through [ComparisonRunner].
+     */
+    override fun run() {
+        val parsedKinds =
+            kinds
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .map { ConverterKind.fromId(it) }
+        val exitCode =
+            runner.run(
+                ComparisonRequest(
+                    configPath = configPath,
+                    kinds = parsedKinds,
+                    reportDirectory = reportDirectoryPath,
                     githubSummaryPath = githubSummaryPath,
                 ),
             )
