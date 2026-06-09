@@ -105,6 +105,7 @@ class EvaluationReportWriter(
         appendLine()
         appendLine("## Paths")
         appendLine()
+        appendLine("- Converter kind: `${result.kind.id}`")
         appendLine("- Checkout directory: `${result.checkoutDirectory}`")
         appendLine("- Generated Kotlin directory: `${result.generatedKotlinDirectory}`")
         appendLine("- Conversion report: `${result.conversionReportPath}`")
@@ -443,6 +444,7 @@ class EvaluationReportWriter(
             "id" to result.config.id,
             "name" to result.config.name,
             "role" to result.config.role,
+            "kind" to result.kind.id,
             "repository_source" to result.config.repository.source,
             "repository_upstream" to result.config.repository.upstream,
             "repository_ref" to result.config.repository.ref,

@@ -5,6 +5,7 @@ import iurii.bulanov.benchmark.config.BuildConfig
 import iurii.bulanov.benchmark.config.CheckoutConfig
 import iurii.bulanov.benchmark.config.JavaConfig
 import iurii.bulanov.benchmark.config.RepositoryConfig
+import iurii.bulanov.benchmark.conversion.ConverterKind
 import iurii.bulanov.logging.StructuredLogger
 import iurii.bulanov.source.DiscoveredSourceFile
 import java.nio.file.Files
@@ -29,6 +30,7 @@ class EvaluationReportWriterTest {
         assertTrue(summaryPath.exists())
         val json = jsonPath.readText()
         assertContains(json, "\"id\":\"sample\"")
+        assertContains(json, "\"kind\":\"k1-old-dumb\"")
         assertContains(json, "\"java_file_count\":1")
         assertContains(json, "\"kotlin_file_count\":0")
         assertContains(json, "\"conversion\"")
@@ -100,8 +102,9 @@ class EvaluationReportWriterTest {
     private fun sampleResult(reportDirectory: Path): EvaluationResult =
         EvaluationResult(
             config = testConfig("sample"),
+            kind = ConverterKind.K1_OLD_DUMB,
             checkoutDirectory = Path.of("build/benchmarks/sample/source"),
-            generatedKotlinDirectory = Path.of("build/j2k/sample/generated-kotlin"),
+            generatedKotlinDirectory = Path.of("build/j2k/sample/k1-old-dumb/generated-kotlin"),
             reportDirectory = reportDirectory,
             conversionReportPath = Path.of("build/j2k/sample/conversion.json"),
             checkoutReportPath = Path.of("build/benchmarks/sample/checkout.json"),
@@ -124,8 +127,9 @@ class EvaluationReportWriterTest {
     private fun completeResult(reportDirectory: Path): EvaluationResult =
         EvaluationResult(
             config = testConfig("complete"),
+            kind = ConverterKind.K1_OLD_SMART,
             checkoutDirectory = Path.of("build/benchmarks/complete/source"),
-            generatedKotlinDirectory = Path.of("build/j2k/complete/generated-kotlin"),
+            generatedKotlinDirectory = Path.of("build/j2k/complete/k1-old-smart/generated-kotlin"),
             reportDirectory = reportDirectory,
             conversionReportPath = Path.of("build/j2k/complete/conversion.json"),
             checkoutReportPath = Path.of("build/benchmarks/complete/checkout.json"),

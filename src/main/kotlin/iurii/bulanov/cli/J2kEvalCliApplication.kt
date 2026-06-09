@@ -5,12 +5,14 @@ import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
+import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
 import iurii.bulanov.benchmark.checkout.BenchmarkCheckoutRunner
 import iurii.bulanov.benchmark.checkout.CheckoutBenchmarkRequest
+import iurii.bulanov.benchmark.conversion.ConverterKind
 import iurii.bulanov.benchmark.evaluation.EvaluationRequest
 import iurii.bulanov.benchmark.evaluation.EvaluatorRunner
 import iurii.bulanov.logging.JsonLineLogger
@@ -108,6 +110,7 @@ private class EvaluateCliktCommand(
     private val runner: EvaluatorRunner,
 ) : CliktCommand(name = "evaluate") {
     private val configPath by option("--config", help = "Path to benchmark YAML config").path().required()
+    private val kind by option("--kind", help = "Converter kind to evaluate (k1-old-dumb, k1-old-smart, k1-new, k2)").default("k1-old-dumb")
     private val generatedKotlinPath by option("--generated-kotlin", help = "Generated Kotlin output directory").path()
     private val reportDirectoryPath by option("--report-dir", help = "Evaluator report output directory").path()
     private val conversionReportPath by option("--conversion-report", help = "J2K conversion JSON report path").path()
@@ -122,6 +125,7 @@ private class EvaluateCliktCommand(
             runner.run(
                 EvaluationRequest(
                     configPath = configPath,
+                    kind = ConverterKind.fromId(kind),
                     generatedKotlinDirectory = generatedKotlinPath,
                     reportDirectory = reportDirectoryPath,
                     conversionReport = conversionReportPath,

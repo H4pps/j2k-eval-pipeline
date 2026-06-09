@@ -34,6 +34,10 @@ jobs:
     name: Convert and evaluate ${{ matrix.config }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # Single converter kind for now (k1-old-dumb, k1-old-smart, k1-new, k2).
+      # Widen to a benchmark x kind matrix in a later phase.
+      J2K_KIND: k1-old-dumb
     strategy:
       fail-fast: false
       matrix:
@@ -71,14 +75,14 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          mkdir -p build/j2k/${{ matrix.benchmark }}/logs
-          ./gradlew --no-daemon --console=plain --stacktrace convert -PbenchmarkConfig=${{ matrix.config }} 2>&1 \
-            | tee build/j2k/${{ matrix.benchmark }}/logs/gradle-convert.log
+          mkdir -p build/j2k/${{ matrix.benchmark }}/$J2K_KIND/logs
+          ./gradlew --no-daemon --console=plain --stacktrace convert -PbenchmarkConfig=${{ matrix.config }} -Pkind=$J2K_KIND 2>&1 \
+            | tee build/j2k/${{ matrix.benchmark }}/$J2K_KIND/logs/gradle-convert.log
 
       - name: Run evaluator
         shell: bash
         run: |
-          ./gradlew --no-daemon run --args="evaluate --config ${{ matrix.config }} --github-summary $GITHUB_STEP_SUMMARY"
+          ./gradlew --no-daemon run --args="evaluate --config ${{ matrix.config }} --kind $J2K_KIND --github-summary $GITHUB_STEP_SUMMARY"
 
       - name: Upload conversion and evaluation reports
         if: always()

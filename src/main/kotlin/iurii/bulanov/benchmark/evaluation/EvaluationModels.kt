@@ -1,6 +1,7 @@
 package iurii.bulanov.benchmark.evaluation
 
 import iurii.bulanov.benchmark.config.BenchmarkConfig
+import iurii.bulanov.benchmark.conversion.ConverterKind
 import iurii.bulanov.source.DiscoveredSourceFile
 import java.nio.file.Path
 
@@ -9,6 +10,7 @@ import java.nio.file.Path
  */
 data class EvaluationRequest(
     val configPath: Path,
+    val kind: ConverterKind,
     val generatedKotlinDirectory: Path?,
     val reportDirectory: Path?,
     val conversionReport: Path? = null,
@@ -39,6 +41,7 @@ data class EvaluationWarning(
  */
 data class EvaluationResult(
     val config: BenchmarkConfig,
+    val kind: ConverterKind,
     val checkoutDirectory: Path,
     val generatedKotlinDirectory: Path,
     val reportDirectory: Path,

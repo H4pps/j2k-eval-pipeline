@@ -1,5 +1,6 @@
 package iurii.bulanov.benchmark.evaluation
 
+import iurii.bulanov.benchmark.conversion.ConverterKind
 import iurii.bulanov.logging.StructuredLogger
 import java.nio.file.Files
 import java.nio.file.Path
@@ -21,9 +22,9 @@ class EvaluatorRunnerTest {
         checkoutDirectory.resolve("src/main/java/com/example/App.java").writeText("package com.example; class App {}")
         val configPath = writeConfig(benchmarkId, checkoutDirectory)
 
-        val exitCode = EvaluatorRunner(logger = NoopLogger).run(EvaluationRequest(configPath, null, null))
+        val exitCode = EvaluatorRunner(logger = NoopLogger).run(EvaluationRequest(configPath, ConverterKind.K1_OLD_DUMB, null, null))
 
-        val reportDirectory = Path.of("build/reports/j2k-eval/$benchmarkId")
+        val reportDirectory = Path.of("build/reports/j2k-eval/$benchmarkId/k1-old-dumb")
         val jsonPath = reportDirectory.resolve("evaluation.json")
         assertEquals(0, exitCode)
         assertTrue(jsonPath.exists())
@@ -54,6 +55,7 @@ class EvaluatorRunnerTest {
             EvaluatorRunner(logger = NoopLogger).run(
                 EvaluationRequest(
                     configPath = configPath,
+                    kind = ConverterKind.K1_OLD_DUMB,
                     generatedKotlinDirectory = generatedDirectory,
                     reportDirectory = reportDirectory,
                     conversionReport = conversionReport,
@@ -97,6 +99,7 @@ class EvaluatorRunnerTest {
             EvaluatorRunner(logger = NoopLogger).run(
                 EvaluationRequest(
                     configPath = configPath,
+                    kind = ConverterKind.K1_OLD_DUMB,
                     generatedKotlinDirectory = generatedDirectory,
                     reportDirectory = reportDirectory,
                     conversionReport = conversionReport,
@@ -133,6 +136,7 @@ class EvaluatorRunnerTest {
             EvaluatorRunner(logger = NoopLogger).run(
                 EvaluationRequest(
                     configPath = configPath,
+                    kind = ConverterKind.K1_OLD_DUMB,
                     generatedKotlinDirectory = generatedDirectory,
                     reportDirectory = reportDirectory,
                     conversionReport = conversionReport,
@@ -163,6 +167,7 @@ class EvaluatorRunnerTest {
             EvaluatorRunner(logger = NoopLogger).run(
                 EvaluationRequest(
                     configPath = configPath,
+                    kind = ConverterKind.K1_OLD_DUMB,
                     generatedKotlinDirectory = generatedDirectory,
                     reportDirectory = reportDirectory,
                     conversionReport = Files.createTempDirectory("missing-report-parent").resolve("conversion.json"),
@@ -196,6 +201,7 @@ class EvaluatorRunnerTest {
             EvaluatorRunner(logger = NoopLogger).run(
                 EvaluationRequest(
                     configPath = configPath,
+                    kind = ConverterKind.K1_OLD_DUMB,
                     generatedKotlinDirectory = generatedDirectory,
                     reportDirectory = reportDirectory,
                     conversionReport = conversionReport,
