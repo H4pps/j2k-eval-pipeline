@@ -20,7 +20,7 @@ dependencies {
     implementation(project(":"))
 
     intellijPlatform {
-        intellijIdeaCommunity("2025.2.6.1") {
+        intellijIdeaCommunity("2026.1.3") {
             useInstaller = false
         }
         bundledPlugin("com.intellij.java")
@@ -40,8 +40,8 @@ intellijPlatform {
         name = "J2K Runner Plugin"
         version = project.version.toString()
         ideaVersion {
-            sinceBuild = "252"
-            untilBuild = "252.*"
+            sinceBuild = "261"
+            untilBuild = "261.*"
         }
     }
 }

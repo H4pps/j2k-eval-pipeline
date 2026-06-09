@@ -77,18 +77,17 @@ jobs:
         run: |
           ./gradlew --no-daemon run --args="evaluate --config benchmarks/${{ matrix.benchmark }}.yml --kind ${{ matrix.kind }} --github-summary $GITHUB_STEP_SUMMARY"
 
-      # Fail the job when the converter reported source-level errors (status partial/failed),
-      # so problems are visible without digging into artifacts. Reports are still uploaded
-      # (if: always) and the compare job still runs, so a red kind keeps its column.
+      # Fail the job only when the converter crashed entirely (status=failed, 0 files
+      # converted). Partial conversion (some files errored) is expected evaluation data —
+      # e.g. k1-old-dumb cannot resolve types without indexes — and must not fail the pipeline.
       - name: Fail on converter errors
         shell: bash
         run: |
           report=build/j2k/${{ matrix.benchmark }}/${{ matrix.kind }}/conversion.json
           status=$(jq -r '.status' "$report")
-          errors=$(jq -r '.counts.error_count // 0' "$report")
-          echo "conversion status=$status error_count=$errors"
-          if [ "$status" = "failed" ] || [ "$errors" -gt 0 ]; then
-            echo "::error::J2K conversion for ${{ matrix.benchmark }} (${{ matrix.kind }}) reported $errors error(s), status=$status"
+          echo "conversion status=$status"
+          if [ "$status" = "failed" ]; then
+            echo "::error::J2K conversion for ${{ matrix.benchmark }} (${{ matrix.kind }}) failed entirely"
             jq -r '.errors[]' "$report" | head -20
             exit 1
           fi
