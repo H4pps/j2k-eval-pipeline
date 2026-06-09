@@ -33,6 +33,7 @@ class ConversionReportWriter {
                         "repository_source" to report.config.repository.source,
                         "repository_ref" to report.config.repository.ref,
                     ),
+                "kind" to report.kind.id,
                 "status" to report.status.name.lowercase(),
                 "counts" to
                     linkedMapOf(
