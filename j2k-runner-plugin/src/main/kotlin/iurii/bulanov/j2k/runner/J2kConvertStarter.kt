@@ -10,6 +10,7 @@ import iurii.bulanov.benchmark.conversion.ConversionPaths
 import iurii.bulanov.benchmark.conversion.ConversionReport
 import iurii.bulanov.benchmark.conversion.ConversionReportWriter
 import iurii.bulanov.benchmark.conversion.ConversionStatus
+import iurii.bulanov.benchmark.conversion.ConverterKind
 import iurii.bulanov.benchmark.conversion.GeneratedKotlinCollector
 import iurii.bulanov.benchmark.conversion.SourceTreeStager
 import iurii.bulanov.j2k.runner.engine.J2kConversionEngineFactory
@@ -40,20 +41,9 @@ class J2kConvertStarter : ApplicationStarter {
     private val psiResolver = StagedPsiResolver()
 
     /**
-     * Command token used by the IntelliJ launcher.
-     */
-    @Suppress("OVERRIDE_DEPRECATION")
-    override val commandName: String = "j2k-convert"
-
-    /**
      * Runs conversion off the EDT because J2K asserts background-thread access.
      */
     override val requiredModality: Int = ApplicationStarter.NOT_IN_EDT
-
-    /**
-     * Allows the command to run in the GitHub Actions IDE process.
-     */
-    override val isHeadless: Boolean = true
 
     /**
      * Executes conversion and terminates the IntelliJ process.
@@ -61,6 +51,7 @@ class J2kConvertStarter : ApplicationStarter {
     override fun main(args: List<String>) {
         val command = args.toList()
         var config: BenchmarkConfig? = null
+        var kind: ConverterKind? = null
         var paths: ConversionPaths? = null
         val warnings = mutableListOf<String>()
         val errors = mutableListOf<String>()
@@ -69,9 +60,10 @@ class J2kConvertStarter : ApplicationStarter {
         try {
             val runnerArgs = if (args.firstOrNull() == "j2k-convert") args.drop(1) else args
             val options = J2kRunnerOptions.parse(runnerArgs)
+            kind = options.kind
             val harnessRoot = options.harnessRoot()
             config = configParser.parse(options.configPath)
-            paths = pathResolver.resolve(config, options.toPathOverrides()).resolveAgainst(harnessRoot)
+            paths = pathResolver.resolve(config, kind, options.toPathOverrides()).resolveAgainst(harnessRoot)
             paths.logsDirectory.createDirectories()
             val logger = ConversionLogger(paths)
             val conversionRunner = J2kConversionRunner(logger, projectFactory, psiResolver)
@@ -80,6 +72,7 @@ class J2kConvertStarter : ApplicationStarter {
                 "conversion_started",
                 mapOf(
                     "benchmark_id" to config.id,
+                    "kind" to kind.id,
                     "config_path" to options.configPath.toString(),
                     "idea_kotlin_plugin_use_k2" to System.getProperty("idea.kotlin.plugin.use.k2"),
                 ),
@@ -105,7 +98,7 @@ class J2kConvertStarter : ApplicationStarter {
                     "copied_file_count" to stagingResult.copiedFileCount,
                 ),
             )
-            val engine = engineFactory.create()
+            val engine = engineFactory.create(kind)
             val j2kResult = conversionRunner.run(engine, config, paths, javaFiles.size)
             warnings += j2kResult.warnings
             errors += j2kResult.errors
@@ -147,6 +140,7 @@ class J2kConvertStarter : ApplicationStarter {
             reportWriter.write(
                 ConversionReport(
                     config = config,
+                    kind = kind,
                     status = status,
                     sourceJavaFileCount = javaFiles.size,
                     generatedKotlinFileCount = collection.generatedFiles.size,
@@ -170,10 +164,12 @@ class J2kConvertStarter : ApplicationStarter {
             errors += exception.describe()
             val safeConfig = config
             val safePaths = paths
-            if (safeConfig != null && safePaths != null) {
+            val safeKind = kind
+            if (safeConfig != null && safePaths != null && safeKind != null) {
                 reportWriter.writeFailure(
                     ConversionReport(
                         config = safeConfig,
+                        kind = safeKind,
                         status = ConversionStatus.FAILED,
                         sourceJavaFileCount = 0,
                         generatedKotlinFileCount = 0,

@@ -27,18 +27,30 @@ import java.nio.file.Path
 class RunnerProjectFactory {
     /**
      * Creates a disposable project rooted at the staged benchmark source tree.
+     *
+     * When [index] is true, uses the IDE open path (`openProject`) so the project is fully
+     * registered and the open sequence schedules indexing — required for the indexed (smart-mode)
+     * converters. When false, uses bare `newProject`, which schedules no indexing; the dumb-mode
+     * converter then runs with no background indexing to race against.
      */
     fun createProject(
         projectName: String,
         stagingDirectory: Path,
+        index: Boolean,
     ): Project {
         val openProjectTask =
             OpenProjectTask
                 .build()
                 .asNewProject()
                 .withProjectName(projectName)
-        return ProjectManagerEx.getInstanceEx().newProject(stagingDirectory, openProjectTask)
-            ?: error("failed to create IntelliJ project for $stagingDirectory")
+        val projectManager = ProjectManagerEx.getInstanceEx()
+        return if (index) {
+            projectManager.openProject(stagingDirectory, openProjectTask)
+                ?: error("failed to open IntelliJ project for $stagingDirectory")
+        } else {
+            projectManager.newProject(stagingDirectory, openProjectTask)
+                ?: error("failed to create IntelliJ project for $stagingDirectory")
+        }
     }
 
     /**

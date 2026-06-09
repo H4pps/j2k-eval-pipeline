@@ -1,6 +1,7 @@
 package iurii.bulanov.j2k.runner
 
 import iurii.bulanov.benchmark.conversion.ConversionPathOverrides
+import iurii.bulanov.benchmark.conversion.ConverterKind
 import java.nio.file.Path
 
 /**
@@ -8,6 +9,7 @@ import java.nio.file.Path
  */
 data class J2kRunnerOptions(
     val configPath: Path,
+    val kind: ConverterKind,
     val stagingDirectory: Path?,
     val generatedKotlinDirectory: Path?,
     val conversionReport: Path?,
@@ -55,6 +57,7 @@ data class J2kRunnerOptions(
             }
 
             val config = values.remove("--config") ?: throw IllegalArgumentException("missing required --config")
+            val kind = values.remove("--kind")?.let { ConverterKind.fromId(it) } ?: ConverterKind.K1_OLD_DUMB
             val stagingDirectory = values.remove("--staging-dir")?.let { Path.of(it) }
             val generatedKotlinDirectory = values.remove("--generated-kotlin-dir")?.let { Path.of(it) }
             val conversionReport = values.remove("--conversion-report")?.let { Path.of(it) }
@@ -65,6 +68,7 @@ data class J2kRunnerOptions(
 
             return J2kRunnerOptions(
                 configPath = Path.of(config),
+                kind = kind,
                 stagingDirectory = stagingDirectory,
                 generatedKotlinDirectory = generatedKotlinDirectory,
                 conversionReport = conversionReport,

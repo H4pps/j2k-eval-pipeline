@@ -20,6 +20,14 @@ interface J2kConversionEngine {
     val id: String
 
     /**
+     * Whether this converter needs the project indexed (smart mode) before conversion.
+     *
+     * The new (K1_NEW/K2) converters resolve through the Analysis API and require built indexes;
+     * the legacy converter runs in dumb mode and must not pay for (or wait on) indexing.
+     */
+    val requiresSmartMode: Boolean
+
+    /**
      * Applies engine-specific setup to the disposable conversion [project].
      *
      * Returns a small map of fields describing what was configured, for structured logging.

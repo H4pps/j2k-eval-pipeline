@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 package iurii.bulanov.j2k.runner.engine
 
 import com.intellij.openapi.application.ApplicationManager
@@ -7,6 +9,7 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
 import com.intellij.psi.PsiJavaFile
+import com.intellij.util.indexing.UnindexedFilesScanner
 import iurii.bulanov.benchmark.config.BenchmarkConfig
 import iurii.bulanov.benchmark.conversion.ConversionPaths
 import iurii.bulanov.j2k.runner.ConversionLogger
@@ -35,7 +38,7 @@ class J2kConversionRunner(
         paths: ConversionPaths,
         sourceJavaFileCount: Int,
     ): J2kRunResult {
-        val project = projectFactory.createProject("j2k-${config.id}", paths.stagingDirectory)
+        val project = projectFactory.createProject("j2k-${config.id}", paths.stagingDirectory, index = engine.requiresSmartMode)
         return try {
             logger.log("conversion_project_created", mapOf("benchmark_id" to config.id, "project_name" to project.name))
             logger.log(
@@ -44,6 +47,10 @@ class J2kConversionRunner(
             )
             val module = projectFactory.createModule(project, paths.stagingDirectory, config.java.sourceRoots)
             logger.log("conversion_module_created", mapOf("benchmark_id" to config.id, "module_name" to module.name))
+            val dumbService = DumbService.getInstance(project)
+            if (engine.requiresSmartMode) {
+                indexProject(project, dumbService, config.id)
+            }
             val javaFiles =
                 ApplicationManager.getApplication().runReadAction(
                     Computable {
@@ -64,7 +71,6 @@ class J2kConversionRunner(
                 javaFiles.associateWith { javaFile ->
                     psiResolver.relativeSourcePath(paths.stagingDirectory, config.java.sourceRoots, Path.of(javaFile.virtualFile.path))
                 }
-            val dumbService = DumbService.getInstance(project)
             val batchResult =
                 try {
                     val results = engine.convert(project, module, dumbService, javaFiles)
@@ -107,6 +113,34 @@ class J2kConversionRunner(
         } finally {
             projectFactory.closeProject(project)
         }
+    }
+
+    /**
+     * Triggers an unindexed-files scan and waits, with a hard time bound, for the project to reach
+     * smart mode — required before the new (K1_NEW/K2) converters resolve through the Analysis API.
+     *
+     * Done once per run (not per converter call) so the per-file fallback never re-indexes. The
+     * project is created via the IDE open path, which schedules indexing; queuing a scanner is a
+     * backstop, and `waitForSmartMode` is bounded so a stuck index becomes a reportable failure
+     * rather than a hang. Safe to block here because the runner executes off the EDT.
+     */
+    private fun indexProject(
+        project: Project,
+        dumbService: DumbService,
+        benchmarkId: String,
+    ) {
+        UnindexedFilesScanner(project, "j2k-runner conversion").queue()
+        val startMs = System.currentTimeMillis()
+        val reachedSmartMode = dumbService.waitForSmartMode(INDEXING_TIMEOUT_MS)
+        logger.log(
+            "conversion_indexing_completed",
+            mapOf(
+                "benchmark_id" to benchmarkId,
+                "reached_smart_mode" to reachedSmartMode,
+                "elapsed_ms" to (System.currentTimeMillis() - startMs),
+            ),
+        )
+        check(reachedSmartMode) { "project did not reach smart mode within ${INDEXING_TIMEOUT_MS}ms" }
     }
 
     /**
@@ -155,6 +189,15 @@ class J2kConversionRunner(
             warnings = listOf("Batch J2K failed; retried conversion per file. Batch error: ${batchFailure.describe()}"),
             errors = errors,
         )
+    }
+
+    private companion object {
+        /**
+         * Upper bound for headless indexing. The disposable project is tiny, so real indexing takes
+         * seconds; this ceiling only guards the never-completes case. Override via
+         * `-Dj2k.indexing.timeoutMs=...`.
+         */
+        private val INDEXING_TIMEOUT_MS: Long = System.getProperty("j2k.indexing.timeoutMs")?.toLongOrNull() ?: 300_000L
     }
 }
 
