@@ -3,11 +3,11 @@
 package iurii.bulanov.j2k.runner.engine
 
 import com.intellij.openapi.module.Module
+import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiJavaFile
 import iurii.bulanov.benchmark.conversion.ConverterKind
-import kotlinx.coroutines.runBlocking
 import org.jetbrains.kotlin.j2k.ConverterSettings
 import org.jetbrains.kotlin.j2k.J2kConverterExtension
 
@@ -61,13 +61,14 @@ abstract class AbstractExtensionConversionEngine(
         val converter = extension.createJavaToKotlinConverter(project, module, settings, null)
         val postProcessor = extension.createPostProcessor(formatCode = true)
         return runConversion(dumbService) {
-            runBlocking {
-                val result = converter.filesToKotlin(
+            converter
+                .filesToKotlin(
                     javaFiles,
                     postProcessor,
-                )
-                javaFiles.map { result.kotlinCodeByJavaFile.getValue(it) }
-            }
+                    EmptyProgressIndicator(),
+                    emptyList(),
+                    emptyList(),
+                ).results
         }
     }
 
