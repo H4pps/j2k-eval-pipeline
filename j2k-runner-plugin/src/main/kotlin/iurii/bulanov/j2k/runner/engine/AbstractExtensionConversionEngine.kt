@@ -62,14 +62,11 @@ abstract class AbstractExtensionConversionEngine(
         val postProcessor = extension.createPostProcessor(formatCode = true)
         return runConversion(dumbService) {
             runBlocking {
-                converter
-                    .filesToKotlin(
-                        javaFiles,
-                        postProcessor,
-                        null,
-                        emptyList(),
-                        emptyList(),
-                    ).kotlinFiles.map { it.text }
+                val result = converter.filesToKotlin(
+                    javaFiles,
+                    postProcessor,
+                )
+                javaFiles.map { result.kotlinCodeByJavaFile.getValue(it) }
             }
         }
     }
