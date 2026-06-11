@@ -35,7 +35,17 @@ class ComparisonReportWriterTest {
         assertContains(md, "## Conversion Execution")
         // Transposed values.
         assertContains(md, "| Coverage % | 94.10% | 100.00% |")
+        assertContains(md, "| Control-flow fidelity | 0.800 | 0.950 |")
+        assertContains(md, "| Nullability inference accuracy | 0.667 | 1.000 |")
         assertContains(md, "| Status | partial | completed |")
+        assertContains(md, "| Branch complexity preservation | 0.700 | 1.200 |")
+        assertContains(md, "| Java function declarations | 56 | 56 |")
+        assertContains(md, "| Content-shape preserved files | 14 | 17 |")
+        assertContains(md, "| Return preservation ratio | 0.800 | 0.950 |")
+        assertContains(md, "| Null comparisons | 1 | 1 |")
+        assertContains(md, "| Nullability casts | 1 | 1 |")
+        assertContains(md, "| Safe calls | 1 | 0 |")
+        assertContains(md, "| Total nullability operations | 3 | 2 |")
         // Divergence: a file missing in one kind but produced by the other.
         assertContains(md, "## Divergences")
         assertContains(md, "`a/B.kt` — missing in `k1-old-dumb`")
@@ -120,8 +130,26 @@ class ComparisonReportWriterTest {
                         "missing_kotlin_files" to missing,
                     ),
                 "structure" to mapOf("java_method_count" to 56, "kotlin_function_count" to 48),
-                "content" to mapOf("matched_file_count" to matched),
-                "nullability" to mapOf("kotlin_nullable_type_count" to 9),
+                "content" to
+                    mapOf(
+                        "matched_file_count" to matched,
+                        "java_function_declaration_count" to 56,
+                        "kotlin_function_declaration_count" to if (kind == ConverterKind.K2) 56 else 48,
+                        "content_shape_preserved_file_count" to if (kind == ConverterKind.K2) 17 else 14,
+                        "content_shape_mismatch_file_count" to if (kind == ConverterKind.K2) 0 else 2,
+                        "return_preservation_ratio" to if (kind == ConverterKind.K2) 0.95 else 0.8,
+                        "control_flow_fidelity_score" to if (kind == ConverterKind.K2) 0.95 else 0.8,
+                        "branch_complexity_index_preservation" to if (kind == ConverterKind.K2) 1.2 else 0.7,
+                    ),
+                "nullability" to
+                    mapOf(
+                        "kotlin_nullable_type_count" to 9,
+                        "null_comparison_count" to 1,
+                        "nullability_cast_count" to 1,
+                        "safe_call_count" to if (kind == ConverterKind.K2) 0 else 1,
+                        "total_nullability_operation_count" to if (kind == ConverterKind.K2) 2 else 3,
+                        "nullability_inference_accuracy" to if (kind == ConverterKind.K2) 1.0 else 2.0 / 3.0,
+                    ),
                 "quality" to mapOf("not_null_assertion_count" to 6),
             ),
         )

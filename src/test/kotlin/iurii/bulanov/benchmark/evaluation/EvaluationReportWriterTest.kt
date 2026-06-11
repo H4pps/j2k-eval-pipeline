@@ -19,6 +19,7 @@ import kotlin.test.assertTrue
 
 class EvaluationReportWriterTest {
     @Test
+    @Suppress("LongMethod")
     fun `writes assignment aligned json and markdown for partial conversions`() {
         val reportDirectory = Files.createTempDirectory("evaluation-report-")
 
@@ -38,6 +39,14 @@ class EvaluationReportWriterTest {
         assertContains(json, "\"quality\"")
         assertContains(json, "\"content\"")
         assertContains(json, "\"nullability\"")
+        assertContains(json, "\"control_flow_fidelity_score\":0.4")
+        assertContains(json, "\"java_function_declaration_count\":1")
+        assertContains(json, "\"content_shape_preserved_file_count\":1")
+        assertContains(json, "\"return_preservation_ratio\":0.0")
+        assertContains(json, "\"null_comparison_count\":1")
+        assertContains(json, "\"nullability_cast_count\":1")
+        assertContains(json, "\"safe_call_count\":0")
+        assertContains(json, "\"nullability_inference_accuracy\":0.5")
         assertContains(json, "\"analysis\"")
         assertContains(json, "\"analysis_method\":\"structural_heuristics\"")
         assertContains(json, "\"missing_output_count\":1")
@@ -71,8 +80,17 @@ class EvaluationReportWriterTest {
         assertContains(summary, "Kotlin functions not present as Java methods")
         assertContains(summary, "## Content Preservation")
         assertContains(summary, "Missing Kotlin bodies: `1`")
+        assertContains(summary, "Function declarations: Java `1`, Kotlin `1`")
+        assertContains(summary, "Control-flow fidelity score: `0.400` (returns `0/1`, branches `0/0`, throws `0/0`, tries `0/0`)")
+        assertContains(summary, "Content-shape preservation rate: `1.000` (`1/1` matched files preserved; mismatches `0`)")
+        assertContains(
+            summary,
+            "Return density: Java `1.000`, Kotlin `0.000`, preservation `0.000` (returns per function `1/1` vs `0/1`)",
+        )
         assertContains(summary, "`App.kt#run`")
         assertContains(summary, "## Nullability Signals")
+        assertContains(summary, "Total nullability operations: `2` (null comparisons `1`, casts `1`, safe calls `0`)")
+        assertContains(summary, "Nullability inference accuracy: `0.500`")
         assertContains(summary, "Nullable annotations not preserved: `1`")
         assertContains(summary, "`App.kt#name`")
         assertContains(summary, "Missing generated Kotlin files: `1`")
@@ -300,6 +318,22 @@ class EvaluationReportWriterTest {
             kotlinThrowCount = 0,
             javaTryCount = 0,
             kotlinTryCount = 0,
+            javaFunctionDeclarationCount = 1,
+            kotlinFunctionDeclarationCount = 1,
+            contentShapePreservedFileCount = 1,
+            contentShapeMismatchFileCount = 0,
+            returnPreservationRatio = 0.0,
+            branchPreservationRatio = 1.0,
+            throwPreservationRatio = 1.0,
+            tryPreservationRatio = 1.0,
+            controlFlowFidelityScore = 0.4,
+            contentShapePreservationRate = 1.0,
+            javaReturnDensity = 1.0,
+            kotlinReturnDensity = 0.0,
+            returnStatementDensityPreservation = 0.0,
+            javaBranchComplexityIndex = 0.0,
+            kotlinBranchComplexityIndex = 0.0,
+            branchComplexityIndexPreservation = 1.0,
             findings =
                 listOf(
                     EvaluationWarning(
@@ -319,6 +353,12 @@ class EvaluationReportWriterTest {
             javaNullableAnnotationCount = 1,
             javaNotNullAnnotationCount = 0,
             kotlinNullableTypeCount = 0,
+            contradictoryNullabilityPatterns = 1,
+            nullComparisonCount = 1,
+            nullabilityCastCount = 1,
+            safeCallCount = 0,
+            totalNullabilityOperationCount = 2,
+            nullabilityInferenceAccuracy = 0.5,
             nullableAnnotationsNotPreserved = listOf("App.kt#name"),
             notNullAnnotationsBecameNullable = emptyList(),
             findings =
@@ -354,6 +394,22 @@ class EvaluationReportWriterTest {
             kotlinThrowCount = 0,
             javaTryCount = 0,
             kotlinTryCount = 0,
+            javaFunctionDeclarationCount = 1,
+            kotlinFunctionDeclarationCount = 1,
+            contentShapePreservedFileCount = 1,
+            contentShapeMismatchFileCount = 0,
+            returnPreservationRatio = 1.0,
+            branchPreservationRatio = 1.0,
+            throwPreservationRatio = 1.0,
+            tryPreservationRatio = 1.0,
+            controlFlowFidelityScore = 1.0,
+            contentShapePreservationRate = 1.0,
+            javaReturnDensity = 1.0,
+            kotlinReturnDensity = 1.0,
+            returnStatementDensityPreservation = 1.0,
+            javaBranchComplexityIndex = 0.0,
+            kotlinBranchComplexityIndex = 0.0,
+            branchComplexityIndexPreservation = 1.0,
             findings = emptyList(),
         )
 
@@ -365,6 +421,12 @@ class EvaluationReportWriterTest {
             javaNullableAnnotationCount = 0,
             javaNotNullAnnotationCount = 0,
             kotlinNullableTypeCount = 0,
+            contradictoryNullabilityPatterns = 0,
+            nullComparisonCount = 0,
+            nullabilityCastCount = 0,
+            safeCallCount = 0,
+            totalNullabilityOperationCount = 0,
+            nullabilityInferenceAccuracy = 1.0,
             nullableAnnotationsNotPreserved = emptyList(),
             notNullAnnotationsBecameNullable = emptyList(),
             findings = emptyList(),

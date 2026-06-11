@@ -10,6 +10,7 @@ import kotlin.io.path.writeText
 /**
  * Writes evaluator reports to deterministic JSON and Markdown files.
  */
+@Suppress("LargeClass")
 class EvaluationReportWriter(
     private val logger: StructuredLogger = JsonLineLogger(),
 ) {
@@ -256,6 +257,36 @@ class EvaluationReportWriter(
         appendLine("- Loops: Java `${content.javaLoopCount}`, Kotlin `${content.kotlinLoopCount}`")
         appendLine("- Throws: Java `${content.javaThrowCount}`, Kotlin `${content.kotlinThrowCount}`")
         appendLine("- Try blocks: Java `${content.javaTryCount}`, Kotlin `${content.kotlinTryCount}`")
+        appendLine(
+            "- Function declarations: Java `${content.javaFunctionDeclarationCount}`, Kotlin `${content.kotlinFunctionDeclarationCount}`",
+        )
+        appendLine(
+            "- Control-flow fidelity score: `${formatScore(content.controlFlowFidelityScore)}` " +
+                "(returns `${content.kotlinReturnCount}/${content.javaReturnCount}`, " +
+                "branches `${content.kotlinBranchCount}/${content.javaBranchCount}`, " +
+                "throws `${content.kotlinThrowCount}/${content.javaThrowCount}`, " +
+                "tries `${content.kotlinTryCount}/${content.javaTryCount}`)",
+        )
+        appendLine(
+            "- Content-shape preservation rate: `${formatScore(content.contentShapePreservationRate)}` " +
+                "(`${content.contentShapePreservedFileCount}/${content.matchedFileCount}` matched files preserved; " +
+                "mismatches `${content.contentShapeMismatchFileCount}`)",
+        )
+        appendLine(
+            "- Return density: Java `${formatScore(content.javaReturnDensity)}`, " +
+                "Kotlin `${formatScore(content.kotlinReturnDensity)}`, " +
+                "preservation `${formatScore(content.returnStatementDensityPreservation)}` " +
+                "(returns per function `${content.javaReturnCount}/${content.javaFunctionDeclarationCount}` vs " +
+                "`${content.kotlinReturnCount}/${content.kotlinFunctionDeclarationCount}`)",
+        )
+        appendLine(
+            "- Branch complexity index: Java `${formatScore(content.javaBranchComplexityIndex)}`, " +
+                "Kotlin `${formatScore(content.kotlinBranchComplexityIndex)}`, " +
+                "preservation `${formatScore(content.branchComplexityIndexPreservation)}` " +
+                "(branches+loops+tries per function " +
+                "`${content.javaBranchCount + content.javaLoopCount + content.javaTryCount}/${content.javaFunctionDeclarationCount}` vs " +
+                "`${content.kotlinBranchCount + content.kotlinLoopCount + content.kotlinTryCount}/${content.kotlinFunctionDeclarationCount}`)",
+        )
         appendNameList("Java method bodies missing in Kotlin", content.missingKotlinBodies)
         appendNameList("Files with content-shape mismatches", content.contentShapeMismatchFiles)
     }
@@ -274,6 +305,13 @@ class EvaluationReportWriter(
         appendLine("- Java nullable annotations: `${nullability.javaNullableAnnotationCount}`")
         appendLine("- Java not-null annotations: `${nullability.javaNotNullAnnotationCount}`")
         appendLine("- Kotlin nullable types: `${nullability.kotlinNullableTypeCount}`")
+        appendLine("- Contradictory nullability patterns: `${nullability.contradictoryNullabilityPatterns}`")
+        appendLine(
+            "- Total nullability operations: `${nullability.totalNullabilityOperationCount}` " +
+                "(null comparisons `${nullability.nullComparisonCount}`, casts `${nullability.nullabilityCastCount}`, " +
+                "safe calls `${nullability.safeCallCount}`)",
+        )
+        appendLine("- Nullability inference accuracy: `${formatScore(nullability.nullabilityInferenceAccuracy)}`")
         appendLine("- Nullable annotations not preserved: `${nullability.nullableAnnotationsNotPreserved.size}`")
         appendLine("- Not-null annotations converted to nullable: `${nullability.notNullAnnotationsBecameNullable.size}`")
         appendNameList("Nullable Java declarations not preserved as nullable Kotlin", nullability.nullableAnnotationsNotPreserved)
@@ -435,6 +473,11 @@ class EvaluationReportWriter(
      * Formats report percentages with stable decimal separators across locales.
      */
     private fun formatPercent(value: Double): String = String.format(Locale.US, "%.2f", value)
+
+    /**
+     * Formats score-style ratios with stable decimal separators.
+     */
+    private fun formatScore(value: Double): String = String.format(Locale.US, "%.3f", value)
 
     /**
      * Renders benchmark metadata to a JSON-compatible map.
@@ -604,6 +647,22 @@ class EvaluationReportWriter(
             "kotlin_throw_count" to metrics.kotlinThrowCount,
             "java_try_count" to metrics.javaTryCount,
             "kotlin_try_count" to metrics.kotlinTryCount,
+            "java_function_declaration_count" to metrics.javaFunctionDeclarationCount,
+            "kotlin_function_declaration_count" to metrics.kotlinFunctionDeclarationCount,
+            "content_shape_preserved_file_count" to metrics.contentShapePreservedFileCount,
+            "content_shape_mismatch_file_count" to metrics.contentShapeMismatchFileCount,
+            "return_preservation_ratio" to metrics.returnPreservationRatio,
+            "branch_preservation_ratio" to metrics.branchPreservationRatio,
+            "throw_preservation_ratio" to metrics.throwPreservationRatio,
+            "try_preservation_ratio" to metrics.tryPreservationRatio,
+            "control_flow_fidelity_score" to metrics.controlFlowFidelityScore,
+            "content_shape_preservation_rate" to metrics.contentShapePreservationRate,
+            "java_return_density" to metrics.javaReturnDensity,
+            "kotlin_return_density" to metrics.kotlinReturnDensity,
+            "return_statement_density_preservation" to metrics.returnStatementDensityPreservation,
+            "java_branch_complexity_index" to metrics.javaBranchComplexityIndex,
+            "kotlin_branch_complexity_index" to metrics.kotlinBranchComplexityIndex,
+            "branch_complexity_index_preservation" to metrics.branchComplexityIndexPreservation,
             "findings" to findingsJson(metrics.findings),
         )
 
@@ -615,6 +674,12 @@ class EvaluationReportWriter(
             "java_nullable_annotation_count" to metrics.javaNullableAnnotationCount,
             "java_not_null_annotation_count" to metrics.javaNotNullAnnotationCount,
             "kotlin_nullable_type_count" to metrics.kotlinNullableTypeCount,
+            "contradictory_nullability_patterns" to metrics.contradictoryNullabilityPatterns,
+            "null_comparison_count" to metrics.nullComparisonCount,
+            "nullability_cast_count" to metrics.nullabilityCastCount,
+            "safe_call_count" to metrics.safeCallCount,
+            "total_nullability_operation_count" to metrics.totalNullabilityOperationCount,
+            "nullability_inference_accuracy" to metrics.nullabilityInferenceAccuracy,
             "nullable_annotations_not_preserved" to metrics.nullableAnnotationsNotPreserved,
             "not_null_annotations_became_nullable" to metrics.notNullAnnotationsBecameNullable,
             "findings" to findingsJson(metrics.findings),

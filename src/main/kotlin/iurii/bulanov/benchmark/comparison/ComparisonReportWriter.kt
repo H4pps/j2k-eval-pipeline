@@ -89,6 +89,8 @@ class ComparisonReportWriter(
         appendRow("Coverage %", kinds.map { percent(it.number("file_coverage", "coverage_percent")) })
         appendRow("Matched / Java", kinds.map { matchedOverJava(it) })
         appendRow("Missing outputs", kinds.map { it.listSize("file_coverage", "missing_kotlin_files").toString() })
+        appendRow("Control-flow fidelity", kinds.map { score(it.number("content", "control_flow_fidelity_score")) })
+        appendRow("Nullability inference accuracy", kinds.map { score(it.number("nullability", "nullability_inference_accuracy")) })
         appendRow("`!!` assertions", kinds.map { (it.int("quality", "not_null_assertion_count") ?: "—").toString() })
         appendRow("Evaluator warnings", kinds.map { it.warningCount.toString() })
         appendLowCoverageWarnings(kinds)
@@ -175,6 +177,7 @@ class ComparisonReportWriter(
         when (row.type) {
             MetricType.INT -> (kind.int(row.section, row.key) ?: "—").toString()
             MetricType.PERCENT -> percent(kind.number(row.section, row.key))
+            MetricType.SCORE -> score(kind.number(row.section, row.key))
             MetricType.TEXT -> kind.text(row.section, row.key) ?: "—"
             MetricType.LIST_SIZE -> kind.listSize(row.section, row.key).toString()
         }
@@ -206,6 +209,7 @@ class ComparisonReportWriter(
         when (row.type) {
             MetricType.INT -> kind.int(row.section, row.key)
             MetricType.PERCENT -> kind.number(row.section, row.key)
+            MetricType.SCORE -> kind.number(row.section, row.key)
             MetricType.TEXT -> kind.text(row.section, row.key)
             MetricType.LIST_SIZE -> kind.listSize(row.section, row.key)
         }
@@ -232,6 +236,9 @@ class ComparisonReportWriter(
 
     /** Formats a percentage with a stable decimal separator, or `—` when absent. */
     private fun percent(value: Double?): String = value?.let { String.format(Locale.US, "%.2f%%", it) } ?: "—"
+
+    /** Formats a score-style ratio with a stable decimal separator, or `—` when absent. */
+    private fun score(value: Double?): String = value?.let { String.format(Locale.US, "%.3f", it) } ?: "—"
 
     private companion object {
         /** Below this coverage a kind's quality counts are flagged as not comparable. */
@@ -286,6 +293,32 @@ class ComparisonReportWriter(
                         MetricRow("Kotlin non-empty functions", "content", "kotlin_non_empty_function_count", MetricType.INT),
                         MetricRow("Missing Kotlin bodies", "content", "missing_kotlin_bodies", MetricType.LIST_SIZE),
                         MetricRow("Content-shape mismatches", "content", "content_shape_mismatch_files", MetricType.LIST_SIZE),
+                        MetricRow("Java function declarations", "content", "java_function_declaration_count", MetricType.INT),
+                        MetricRow("Kotlin function declarations", "content", "kotlin_function_declaration_count", MetricType.INT),
+                        MetricRow("Content-shape preserved files", "content", "content_shape_preserved_file_count", MetricType.INT),
+                        MetricRow("Content-shape mismatch file count", "content", "content_shape_mismatch_file_count", MetricType.INT),
+                        MetricRow("Return preservation ratio", "content", "return_preservation_ratio", MetricType.SCORE),
+                        MetricRow("Branch preservation ratio", "content", "branch_preservation_ratio", MetricType.SCORE),
+                        MetricRow("Throw preservation ratio", "content", "throw_preservation_ratio", MetricType.SCORE),
+                        MetricRow("Try preservation ratio", "content", "try_preservation_ratio", MetricType.SCORE),
+                        MetricRow("Control-flow fidelity score", "content", "control_flow_fidelity_score", MetricType.SCORE),
+                        MetricRow("Content-shape preservation rate", "content", "content_shape_preservation_rate", MetricType.SCORE),
+                        MetricRow("Java return density", "content", "java_return_density", MetricType.SCORE),
+                        MetricRow("Kotlin return density", "content", "kotlin_return_density", MetricType.SCORE),
+                        MetricRow(
+                            "Return density preservation",
+                            "content",
+                            "return_statement_density_preservation",
+                            MetricType.SCORE,
+                        ),
+                        MetricRow("Java branch complexity index", "content", "java_branch_complexity_index", MetricType.SCORE),
+                        MetricRow("Kotlin branch complexity index", "content", "kotlin_branch_complexity_index", MetricType.SCORE),
+                        MetricRow(
+                            "Branch complexity preservation",
+                            "content",
+                            "branch_complexity_index_preservation",
+                            MetricType.SCORE,
+                        ),
                     ),
                 ),
                 ReportSection(
@@ -294,6 +327,17 @@ class ComparisonReportWriter(
                         MetricRow("Java nullable annotations", "nullability", "java_nullable_annotation_count", MetricType.INT),
                         MetricRow("Java not-null annotations", "nullability", "java_not_null_annotation_count", MetricType.INT),
                         MetricRow("Kotlin nullable types", "nullability", "kotlin_nullable_type_count", MetricType.INT),
+                        MetricRow(
+                            "Contradictory nullability patterns",
+                            "nullability",
+                            "contradictory_nullability_patterns",
+                            MetricType.INT,
+                        ),
+                        MetricRow("Null comparisons", "nullability", "null_comparison_count", MetricType.INT),
+                        MetricRow("Nullability casts", "nullability", "nullability_cast_count", MetricType.INT),
+                        MetricRow("Safe calls", "nullability", "safe_call_count", MetricType.INT),
+                        MetricRow("Total nullability operations", "nullability", "total_nullability_operation_count", MetricType.INT),
+                        MetricRow("Nullability inference accuracy", "nullability", "nullability_inference_accuracy", MetricType.SCORE),
                         MetricRow("Nullable not preserved", "nullability", "nullable_annotations_not_preserved", MetricType.LIST_SIZE),
                         MetricRow("Not-null became nullable", "nullability", "not_null_annotations_became_nullable", MetricType.LIST_SIZE),
                     ),
@@ -331,4 +375,4 @@ private data class ReportSection(
 )
 
 /** How a metric value is read and rendered. */
-private enum class MetricType { INT, PERCENT, TEXT, LIST_SIZE }
+private enum class MetricType { INT, PERCENT, SCORE, TEXT, LIST_SIZE }

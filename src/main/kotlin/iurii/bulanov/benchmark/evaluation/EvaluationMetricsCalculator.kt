@@ -8,6 +8,7 @@ import kotlin.io.path.readText
 /**
  * Calculates deterministic evaluator metrics from discovered Java and Kotlin files.
  */
+@Suppress("LargeClass")
 class EvaluationMetricsCalculator(
     private val scanner: SourceTextScanner = SourceTextScanner(),
 ) {
@@ -275,7 +276,9 @@ class EvaluationMetricsCalculator(
     /**
      * Calculates parser-backed body and control-flow preservation metrics across matched files.
      */
+    @Suppress("LongMethod")
     private fun content(pairs: List<MatchedSourceStructure>): ContentMetrics {
+        val counts = contentCounts(pairs)
         val missingBodies =
             pairs
                 .flatMap { pair ->
@@ -301,6 +304,75 @@ class EvaluationMetricsCalculator(
             kotlinEmptyFunctionCount = pairs.sumOf { it.kotlin.content.emptyFunctionNames.size },
             missingKotlinBodies = missingBodies,
             contentShapeMismatchFiles = shapeMismatchFiles,
+            javaReturnCount = counts.javaReturnCount,
+            kotlinReturnCount = counts.kotlinReturnCount,
+            javaBranchCount = counts.javaBranchCount,
+            kotlinBranchCount = counts.kotlinBranchCount,
+            javaLoopCount = counts.javaLoopCount,
+            kotlinLoopCount = counts.kotlinLoopCount,
+            javaThrowCount = counts.javaThrowCount,
+            kotlinThrowCount = counts.kotlinThrowCount,
+            javaTryCount = counts.javaTryCount,
+            kotlinTryCount = counts.kotlinTryCount,
+            javaFunctionDeclarationCount = counts.javaFunctionDeclarationCount,
+            kotlinFunctionDeclarationCount = counts.kotlinFunctionDeclarationCount,
+            contentShapePreservedFileCount = pairs.size - shapeMismatchFiles.size,
+            contentShapeMismatchFileCount = shapeMismatchFiles.size,
+            returnPreservationRatio = preservation(counts.kotlinReturnCount, counts.javaReturnCount),
+            branchPreservationRatio = preservation(counts.kotlinBranchCount, counts.javaBranchCount),
+            throwPreservationRatio = preservation(counts.kotlinThrowCount, counts.javaThrowCount),
+            tryPreservationRatio = preservation(counts.kotlinTryCount, counts.javaTryCount),
+            controlFlowFidelityScore = controlFlowFidelityScore(counts),
+            contentShapePreservationRate = contentShapePreservationRate(pairs.size, shapeMismatchFiles.size),
+            javaReturnDensity = density(counts.javaReturnCount, counts.javaFunctionDeclarationCount),
+            kotlinReturnDensity = density(counts.kotlinReturnCount, counts.kotlinFunctionDeclarationCount),
+            returnStatementDensityPreservation =
+                cappedRatio(
+                    numerator = density(counts.kotlinReturnCount, counts.kotlinFunctionDeclarationCount),
+                    denominator = density(counts.javaReturnCount, counts.javaFunctionDeclarationCount),
+                    cap = PERFECT_PRESERVATION,
+                ),
+            javaBranchComplexityIndex =
+                branchComplexityIndex(
+                    counts.javaBranchCount,
+                    counts.javaLoopCount,
+                    counts.javaTryCount,
+                    counts.javaFunctionDeclarationCount,
+                ),
+            kotlinBranchComplexityIndex =
+                branchComplexityIndex(
+                    counts.kotlinBranchCount,
+                    counts.kotlinLoopCount,
+                    counts.kotlinTryCount,
+                    counts.kotlinFunctionDeclarationCount,
+                ),
+            branchComplexityIndexPreservation =
+                cappedRatio(
+                    numerator =
+                        branchComplexityIndex(
+                            counts.kotlinBranchCount,
+                            counts.kotlinLoopCount,
+                            counts.kotlinTryCount,
+                            counts.kotlinFunctionDeclarationCount,
+                        ),
+                    denominator =
+                        branchComplexityIndex(
+                            counts.javaBranchCount,
+                            counts.javaLoopCount,
+                            counts.javaTryCount,
+                            counts.javaFunctionDeclarationCount,
+                        ),
+                    cap = BRANCH_COMPLEXITY_PRESERVATION_CAP,
+                ),
+            findings = contentFindings(missingBodies, shapeMismatchFiles),
+        )
+    }
+
+    /**
+     * Aggregates parser-backed content counts across all matched files.
+     */
+    private fun contentCounts(pairs: List<MatchedSourceStructure>): ContentCounts =
+        ContentCounts(
             javaReturnCount = pairs.sumOf { it.java.content.returnCount },
             kotlinReturnCount = pairs.sumOf { it.kotlin.content.returnCount },
             javaBranchCount = pairs.sumOf { it.java.content.branchCount },
@@ -311,14 +383,19 @@ class EvaluationMetricsCalculator(
             kotlinThrowCount = pairs.sumOf { it.kotlin.content.throwCount },
             javaTryCount = pairs.sumOf { it.java.content.tryCount },
             kotlinTryCount = pairs.sumOf { it.kotlin.content.tryCount },
-            findings = contentFindings(missingBodies, shapeMismatchFiles),
+            javaFunctionDeclarationCount = pairs.sumOf { it.java.content.functionDeclarationCount },
+            kotlinFunctionDeclarationCount = pairs.sumOf { it.kotlin.content.functionDeclarationCount },
         )
-    }
 
     /**
      * Calculates parser-backed Java annotation to Kotlin nullable-type preservation metrics.
      */
     private fun nullability(pairs: List<MatchedSourceStructure>): NullabilityMetrics {
+        val contradictoryNullabilityPatterns = pairs.sumOf { it.kotlin.nullability.contradictoryNullabilityPatternCount }
+        val nullComparisonCount = pairs.sumOf { it.kotlin.nullability.nullComparisonCount }
+        val nullabilityCastCount = pairs.sumOf { it.kotlin.nullability.nullabilityCastCount }
+        val safeCallCount = pairs.sumOf { it.kotlin.nullability.safeCallCount }
+        val totalNullabilityOperationCount = pairs.sumOf { it.kotlin.nullability.totalNullabilityOperationCount }
         val nullableNotPreserved =
             pairs
                 .flatMap { pair ->
@@ -338,11 +415,106 @@ class EvaluationMetricsCalculator(
             javaNullableAnnotationCount = pairs.sumOf { it.java.nullability.nullableAnnotationCount },
             javaNotNullAnnotationCount = pairs.sumOf { it.java.nullability.notNullAnnotationCount },
             kotlinNullableTypeCount = pairs.sumOf { it.kotlin.nullability.nullableTypeNames.size },
+            contradictoryNullabilityPatterns = contradictoryNullabilityPatterns,
+            nullComparisonCount = nullComparisonCount,
+            nullabilityCastCount = nullabilityCastCount,
+            safeCallCount = safeCallCount,
+            totalNullabilityOperationCount = totalNullabilityOperationCount,
+            nullabilityInferenceAccuracy =
+                nullabilityInferenceAccuracy(
+                    contradictoryPatterns = contradictoryNullabilityPatterns,
+                    totalNullabilityOperations = totalNullabilityOperationCount,
+                ),
             nullableAnnotationsNotPreserved = nullableNotPreserved,
             notNullAnnotationsBecameNullable = notNullBecameNullable,
             findings = nullabilityFindings(nullableNotPreserved, notNullBecameNullable),
         )
     }
+
+    /**
+     * Calculates weighted preservation of return, branch, throw, and try control-flow signals.
+     */
+    private fun controlFlowFidelityScore(counts: ContentCounts): Double =
+        preservation(counts.kotlinReturnCount, counts.javaReturnCount) * RETURN_PRESERVATION_WEIGHT +
+            preservation(counts.kotlinBranchCount, counts.javaBranchCount) * BRANCH_PRESERVATION_WEIGHT +
+            preservation(counts.kotlinThrowCount, counts.javaThrowCount) * THROW_PRESERVATION_WEIGHT +
+            preservation(counts.kotlinTryCount, counts.javaTryCount) * TRY_PRESERVATION_WEIGHT
+
+    /**
+     * Calculates the share of matched files without content-shape mismatches.
+     */
+    private fun contentShapePreservationRate(
+        matchedFileCount: Int,
+        mismatchFileCount: Int,
+    ): Double =
+        if (matchedFileCount == 0) {
+            PERFECT_PRESERVATION
+        } else {
+            (matchedFileCount - mismatchFileCount).toDouble() / matchedFileCount.toDouble()
+        }
+
+    /**
+     * Calculates per-function density for one count family.
+     */
+    private fun density(
+        count: Int,
+        functionDeclarationCount: Int,
+    ): Double =
+        if (functionDeclarationCount == 0) {
+            0.0
+        } else {
+            count.toDouble() / functionDeclarationCount.toDouble()
+        }
+
+    /**
+     * Calculates conditional complexity per function.
+     */
+    private fun branchComplexityIndex(
+        branchCount: Int,
+        loopCount: Int,
+        tryCount: Int,
+        functionDeclarationCount: Int,
+    ): Double = density(branchCount + loopCount + tryCount, functionDeclarationCount)
+
+    /**
+     * Calculates capped Kotlin-over-Java preservation for integer counts.
+     */
+    private fun preservation(
+        kotlinCount: Int,
+        javaCount: Int,
+    ): Double =
+        if (javaCount == 0) {
+            PERFECT_PRESERVATION
+        } else {
+            minOf(kotlinCount.toDouble() / javaCount.toDouble(), PERFECT_PRESERVATION)
+        }
+
+    /**
+     * Calculates a capped ratio while treating a zero denominator as perfect preservation.
+     */
+    private fun cappedRatio(
+        numerator: Double,
+        denominator: Double,
+        cap: Double,
+    ): Double =
+        if (denominator == 0.0) {
+            PERFECT_PRESERVATION
+        } else {
+            minOf(numerator / denominator, cap)
+        }
+
+    /**
+     * Calculates nullability consistency from contradictory patterns and all nullability operations.
+     */
+    private fun nullabilityInferenceAccuracy(
+        contradictoryPatterns: Int,
+        totalNullabilityOperations: Int,
+    ): Double =
+        if (totalNullabilityOperations == 0) {
+            PERFECT_PRESERVATION
+        } else {
+            PERFECT_PRESERVATION - contradictoryPatterns.toDouble() / totalNullabilityOperations.toDouble()
+        }
 
     /**
      * Builds a deterministic two-way name diff.
@@ -538,4 +710,28 @@ private data class MatchedSourceStructure(
     val kotlin: SourceStructure,
 )
 
+/**
+ * Aggregate content counts used by score calculations.
+ */
+private data class ContentCounts(
+    val javaReturnCount: Int,
+    val kotlinReturnCount: Int,
+    val javaBranchCount: Int,
+    val kotlinBranchCount: Int,
+    val javaLoopCount: Int,
+    val kotlinLoopCount: Int,
+    val javaThrowCount: Int,
+    val kotlinThrowCount: Int,
+    val javaTryCount: Int,
+    val kotlinTryCount: Int,
+    val javaFunctionDeclarationCount: Int,
+    val kotlinFunctionDeclarationCount: Int,
+)
+
+private const val BRANCH_COMPLEXITY_PRESERVATION_CAP = 1.2
+private const val BRANCH_PRESERVATION_WEIGHT = 0.3
 private const val MEMBER_PATH_SEPARATOR = "#"
+private const val PERFECT_PRESERVATION = 1.0
+private const val RETURN_PRESERVATION_WEIGHT = 0.4
+private const val THROW_PRESERVATION_WEIGHT = 0.2
+private const val TRY_PRESERVATION_WEIGHT = 0.1

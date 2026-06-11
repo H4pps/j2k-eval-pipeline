@@ -103,6 +103,127 @@ class EvaluationMetricsCalculatorTest {
         assertFalse("getGlobalName" in metrics.structure.nameDiffs.functions.missingInKotlin)
     }
 
+    @Test
+    fun `calculates core content preservation scores`() {
+        val root = Files.createTempDirectory("evaluation-core-content-")
+        val javaRoot = root.resolve("checkout/src/main/java/com/example").apply { createDirectories() }
+        val kotlinRoot = root.resolve("generated/com/example").apply { createDirectories() }
+        val appJava = javaRoot.resolve("App.java")
+        val appKotlin = kotlinRoot.resolve("App.kt")
+        appJava.writeText(coreContentJava())
+        appKotlin.writeText(coreContentKotlin())
+
+        val metrics =
+            EvaluationMetricsCalculator().calculate(
+                javaFiles = listOf(discovered(appJava, root.resolve("checkout"))),
+                kotlinFiles = listOf(discovered(appKotlin, root.resolve("generated"))),
+                sourceRoots = listOf("src/main/java"),
+            )
+
+        assertEquals(0.8, metrics.content.controlFlowFidelityScore, DOUBLE_TOLERANCE)
+        assertEquals(3, metrics.content.javaFunctionDeclarationCount)
+        assertEquals(3, metrics.content.kotlinFunctionDeclarationCount)
+        assertEquals(0, metrics.content.contentShapePreservedFileCount)
+        assertEquals(1, metrics.content.contentShapeMismatchFileCount)
+        assertEquals(1.0, metrics.content.returnPreservationRatio, DOUBLE_TOLERANCE)
+        assertEquals(1.0, metrics.content.branchPreservationRatio, DOUBLE_TOLERANCE)
+        assertEquals(0.0, metrics.content.throwPreservationRatio, DOUBLE_TOLERANCE)
+        assertEquals(1.0, metrics.content.tryPreservationRatio, DOUBLE_TOLERANCE)
+        assertEquals(0.0, metrics.content.contentShapePreservationRate, DOUBLE_TOLERANCE)
+        assertEquals(2.0 / 3.0, metrics.content.javaReturnDensity, DOUBLE_TOLERANCE)
+        assertEquals(2.0 / 3.0, metrics.content.kotlinReturnDensity, DOUBLE_TOLERANCE)
+        assertEquals(1.0, metrics.content.returnStatementDensityPreservation, DOUBLE_TOLERANCE)
+        assertEquals(1.0, metrics.content.javaBranchComplexityIndex, DOUBLE_TOLERANCE)
+        assertEquals(2.0 / 3.0, metrics.content.kotlinBranchComplexityIndex, DOUBLE_TOLERANCE)
+        assertEquals(2.0 / 3.0, metrics.content.branchComplexityIndexPreservation, DOUBLE_TOLERANCE)
+    }
+
+    /**
+     * Java fixture for exact content metric formulas.
+     */
+    private fun coreContentJava(): String =
+        """
+        package com.example;
+        public class App {
+          public String one() {
+            if (true) return "a";
+            return "b";
+          }
+          public void two() {
+            try {
+              throw new RuntimeException();
+            } catch (RuntimeException ignored) {
+            }
+          }
+          public void three() {
+            while (false) {}
+          }
+        }
+        """.trimIndent()
+
+    /**
+     * Kotlin fixture for exact content metric formulas.
+     */
+    private fun coreContentKotlin(): String =
+        """
+        package com.example
+        class App {
+          fun one(): String {
+            if (true) return "a"
+            return "b"
+          }
+          fun two() {
+            try {
+            } catch (ignored: RuntimeException) {
+            }
+          }
+          fun three() {}
+        }
+        """.trimIndent()
+
+    @Test
+    fun `calculates nullability inference accuracy from contradictory casts`() {
+        val root = Files.createTempDirectory("evaluation-nullability-accuracy-")
+        val javaRoot = root.resolve("checkout/src/main/java/com/example").apply { createDirectories() }
+        val kotlinRoot = root.resolve("generated/com/example").apply { createDirectories() }
+        val appJava = javaRoot.resolve("App.java")
+        val appKotlin = kotlinRoot.resolve("App.kt")
+        appJava.writeText(
+            """
+            package com.example;
+            public class App {
+              public Object lookup(Object source) { return source; }
+            }
+            """.trimIndent(),
+        )
+        appKotlin.writeText(
+            """
+            package com.example
+            class App {
+              fun lookup(source: Any?): String? {
+                val value = source as String
+                if (value == null) return null
+                return source?.toString()
+              }
+            }
+            """.trimIndent(),
+        )
+
+        val metrics =
+            EvaluationMetricsCalculator().calculate(
+                javaFiles = listOf(discovered(appJava, root.resolve("checkout"))),
+                kotlinFiles = listOf(discovered(appKotlin, root.resolve("generated"))),
+                sourceRoots = listOf("src/main/java"),
+            )
+
+        assertEquals(1, metrics.nullability.contradictoryNullabilityPatterns)
+        assertEquals(1, metrics.nullability.nullComparisonCount)
+        assertEquals(1, metrics.nullability.nullabilityCastCount)
+        assertEquals(1, metrics.nullability.safeCallCount)
+        assertEquals(3, metrics.nullability.totalNullabilityOperationCount)
+        assertEquals(2.0 / 3.0, metrics.nullability.nullabilityInferenceAccuracy, DOUBLE_TOLERANCE)
+    }
+
     /**
      * Creates a temporary source fixture with matched, missing, and unexpected outputs.
      */
@@ -247,4 +368,8 @@ class EvaluationMetricsCalculatorTest {
         val javaFiles: List<DiscoveredSourceFile>,
         val kotlinFiles: List<DiscoveredSourceFile>,
     )
+
+    private companion object {
+        private const val DOUBLE_TOLERANCE = 0.0001
+    }
 }

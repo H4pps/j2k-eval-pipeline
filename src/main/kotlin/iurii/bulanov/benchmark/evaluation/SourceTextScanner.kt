@@ -32,6 +32,7 @@ import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtBinaryExpression
+import org.jetbrains.kotlin.psi.KtBinaryExpressionWithTypeRHS
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtClassBody
@@ -61,6 +62,7 @@ import org.jetbrains.kotlin.psi.psiUtil.collectDescendantsOfType
 /**
  * Extracts deterministic structural and quality signals from source text using language parsers.
  */
+@Suppress("LargeClass")
 class SourceTextScanner {
     private val javaParser = JavaParser(ParserConfiguration())
     private val kotlinDisposable = Disposer.newDisposable()
@@ -341,6 +343,7 @@ class SourceTextScanner {
                     .filter { it.hasExplicitEmptyBody() }
                     .map { it.nameAsString }
                     .toSet(),
+            functionDeclarationCount = methodDeclarations.size,
             returnCount = findAll(ReturnStmt::class.java).size,
             branchCount =
                 findAll(IfStmt::class.java).size +
@@ -382,6 +385,7 @@ class SourceTextScanner {
                     .filter { it.hasExplicitEmptyBody() }
                     .mapNotNull { it.name }
                     .toSet(),
+            functionDeclarationCount = functions.size,
             returnCount = collectDescendantsOfType<KtReturnExpression>().size,
             branchCount = collectDescendantsOfType<KtIfExpression>().size + collectDescendantsOfType<KtWhenExpression>().size,
             loopCount = collectDescendantsOfType<KtLoopExpression>().size,
@@ -439,14 +443,22 @@ class SourceTextScanner {
             nullableAnnotationCount = nullableCount,
             notNullAnnotationCount = notNullCount,
             nullableTypeNames = emptySet(),
+            contradictoryNullabilityPatternCount = 0,
+            nullComparisonCount = 0,
+            nullabilityCastCount = 0,
+            safeCallCount = 0,
+            totalNullabilityOperationCount = 0,
         )
     }
 
     /**
      * Builds Kotlin nullable type metrics for function returns, properties, and parameters.
      */
-    private fun KtFile.kotlinNullabilityProfile(): SourceNullabilityProfile =
-        SourceNullabilityProfile(
+    private fun KtFile.kotlinNullabilityProfile(): SourceNullabilityProfile {
+        val nullComparisonCount = collectDescendantsOfType<KtBinaryExpression>().count { it.isNullComparison() }
+        val castCount = collectDescendantsOfType<KtBinaryExpressionWithTypeRHS>().count { it.isNullabilityCast() }
+        val safeCallCount = collectDescendantsOfType<KtSafeQualifiedExpression>().size
+        return SourceNullabilityProfile(
             nullableNames = emptySet(),
             notNullNames = emptySet(),
             nullableAnnotationCount = 0,
@@ -463,7 +475,95 @@ class SourceTextScanner {
                             .filter { it.typeReference?.typeElement is KtNullableType }
                             .mapNotNull { it.name }
                 ).toSet(),
+            contradictoryNullabilityPatternCount = contradictoryNullabilityPatternCount(),
+            nullComparisonCount = nullComparisonCount,
+            nullabilityCastCount = castCount,
+            safeCallCount = safeCallCount,
+            totalNullabilityOperationCount = nullComparisonCount + castCount + safeCallCount,
         )
+    }
+
+    /**
+     * Counts non-null casts followed by null checks on the same local variable.
+     */
+    private fun KtFile.contradictoryNullabilityPatternCount(): Int =
+        collectDescendantsOfType<KtNamedFunction>().sumOf { function ->
+            function.contradictoryNullabilityPatternCount()
+        }
+
+    /**
+     * Counts contradictory nullability patterns inside one function body.
+     */
+    private fun KtNamedFunction.contradictoryNullabilityPatternCount(): Int {
+        val nullChecks = collectDescendantsOfType<KtBinaryExpression>().filter { it.isNullComparison() }
+        val propertyContradictions =
+            collectDescendantsOfType<KtProperty>().count { property ->
+                val name = property.name ?: return@count false
+                val cast = property.initializer as? KtBinaryExpressionWithTypeRHS ?: return@count false
+                cast.isNonNullCast() && nullChecks.hasNearbyCheckFor(name, property.lineNumber())
+            }
+        val assignmentContradictions =
+            collectDescendantsOfType<KtBinaryExpression>().count { expression ->
+                val name = expression.left?.text ?: return@count false
+                val cast = expression.right as? KtBinaryExpressionWithTypeRHS ?: return@count false
+                expression.operationReference.text == ASSIGNMENT_OPERATOR &&
+                    name.isIdentifierLike() &&
+                    cast.isNonNullCast() &&
+                    nullChecks.hasNearbyCheckFor(name, expression.lineNumber())
+            }
+        return propertyContradictions + assignmentContradictions
+    }
+
+    /**
+     * Returns whether [name] is checked against null within the follow-up line window.
+     */
+    private fun List<KtBinaryExpression>.hasNearbyCheckFor(
+        name: String,
+        line: Int,
+    ): Boolean =
+        any { check ->
+            val checkLine = check.lineNumber()
+            checkLine > line &&
+                checkLine - line <= CONTRADICTORY_NULLABILITY_LINE_WINDOW &&
+                check.referencesNameInNullComparison(name)
+        }
+
+    /**
+     * Returns whether this comparison checks [name] against `null`.
+     */
+    private fun KtBinaryExpression.referencesNameInNullComparison(name: String): Boolean =
+        (left?.text == name && right?.text == NULL_LITERAL) ||
+            (right?.text == name && left?.text == NULL_LITERAL)
+
+    /**
+     * Returns whether this binary expression compares a value with `null`.
+     */
+    private fun KtBinaryExpression.isNullComparison(): Boolean =
+        operationReference.text in NULL_COMPARISON_OPERATORS &&
+            (left?.text == NULL_LITERAL || right?.text == NULL_LITERAL)
+
+    /**
+     * Returns whether this expression is an `as` or `as?` cast.
+     */
+    private fun KtBinaryExpressionWithTypeRHS.isNullabilityCast(): Boolean = operationReference.text in CAST_OPERATORS
+
+    /**
+     * Returns whether this expression is a non-null `as Type` cast.
+     */
+    private fun KtBinaryExpressionWithTypeRHS.isNonNullCast(): Boolean =
+        operationReference.text == NON_NULL_CAST_OPERATOR &&
+            right?.typeElement !is KtNullableType &&
+            right?.text?.trim()?.endsWith(NULLABLE_TYPE_SUFFIX) == false
+
+    /**
+     * Calculates a one-based source line number using the parsed file text.
+     */
+    private fun PsiElement.lineNumber(): Int = containingFile.text.take(textOffset).count { it == '\n' } + 1
+
+    /**
+     * Returns whether this text is a simple variable identifier.
+     */
+    private fun String.isIdentifierLike(): Boolean = matches(IDENTIFIER_REGEX)
 
     /**
      * Returns whether this Kotlin function has an explicit body with content.
@@ -766,8 +866,10 @@ class SourceTextScanner {
 
     private companion object {
         private const val ANY_TYPE_NAME = "Any"
+        private const val ASSIGNMENT_OPERATOR = "="
         private const val BOOLEAN_GETTER_PREFIX = "is"
         private const val CLASS_FOR_NAME_SELECTOR = "forName"
+        private const val CONTRADICTORY_NULLABILITY_LINE_WINDOW = 10
         private const val EMPTY_BLOCK = "{}"
         private const val ENUM_CLASS_PREFIX = "enum class "
         private const val GETTER_PREFIX = "get"
@@ -777,8 +879,11 @@ class SourceTextScanner {
         private const val KOTLIN_CLASS_REFERENCE_SUFFIX = "::class"
         private const val KOTLIN_SYNTHETIC_FILE_NAME = "Source.kt"
         private const val KOTLIN_SYNTHETIC_MODULE_NAME = "j2k-eval"
+        private const val NON_NULL_CAST_OPERATOR = "as"
         private const val NOT_EQUALS_OPERATOR = "!="
         private const val NOT_NULL_ASSERTION_OPERATOR = "!!"
+        private const val NULL_LITERAL = "null"
+        private const val NULLABLE_TYPE_SUFFIX = "?"
         private const val SETTER_PARAMETER_COUNT = 1
         private const val SETTER_PREFIX = "set"
         private const val TODO_CALL_NAME = "TODO"
@@ -786,6 +891,8 @@ class SourceTextScanner {
         private const val TRUE_LITERAL = "true"
 
         private val BOOLEAN_TYPE_NAMES = setOf("Boolean", "boolean", "java.lang.Boolean")
+        private val CAST_OPERATORS = setOf("as", "as?")
+        private val IDENTIFIER_REGEX = Regex("[A-Za-z_][A-Za-z0-9_]*")
         private val JAVA_INTEROP_QUALIFIER_SUFFIXES =
             setOf(
                 "Arrays",
@@ -794,6 +901,7 @@ class SourceTextScanner {
                 "Optional",
             )
         private val NOT_NULL_ANNOTATION_NAMES = setOf("nonnull", "notnull")
+        private val NULL_COMPARISON_OPERATORS = setOf("==", "!=")
         private val NULLABLE_ANNOTATION_NAMES = setOf("checkfornull", "nullable")
         private val UNRESOLVED_IMPORT_MARKERS = setOf("unresolved", "missing", "nonexistent")
     }
@@ -856,6 +964,7 @@ data class SourceStructure(
 data class SourceContentProfile(
     val nonEmptyFunctionNames: Set<String>,
     val emptyFunctionNames: Set<String>,
+    val functionDeclarationCount: Int,
     val returnCount: Int,
     val branchCount: Int,
     val loopCount: Int,
@@ -873,6 +982,11 @@ data class SourceNullabilityProfile(
     val nullableAnnotationCount: Int,
     val notNullAnnotationCount: Int,
     val nullableTypeNames: Set<String>,
+    val contradictoryNullabilityPatternCount: Int,
+    val nullComparisonCount: Int,
+    val nullabilityCastCount: Int,
+    val safeCallCount: Int,
+    val totalNullabilityOperationCount: Int,
 )
 
 /**
