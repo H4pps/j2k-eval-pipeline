@@ -59,10 +59,15 @@ class EvaluationReportWriterTest {
         val summary = summaryPath.readText()
         assertFalse(summary.contains("## Benchmark"))
         assertFalse(summary.contains("## Assignment Fit"))
-        assertContains(summary, "## Result Interpretation")
-        assertContains(summary, "## Conversion Execution")
+        assertContains(summary, "## Summary")
+        assertContains(summary, "## Conversion Coverage")
+        assertFalse(summary.contains("## Result Interpretation"))
+        assertFalse(summary.contains("## Conversion Execution"))
+        assertFalse(summary.contains("## File Coverage"))
         assertContains(summary, "## Kotlin Quality Warnings")
         assertContains(summary, "Static J2K produced a partial conversion")
+        assertContains(summary, "Converter status: `completed_with_warnings`")
+        assertContains(summary, "Converter issues: `1` warnings, `0` errors.")
         assertContains(summary, "Java files discovered: `1`")
         assertContains(summary, "Generated Kotlin is compared with the original Java source")
         assertContains(summary, "Java API names missing in Kotlin: `2`")
@@ -81,16 +86,28 @@ class EvaluationReportWriterTest {
         assertContains(summary, "## Content Preservation")
         assertContains(summary, "Missing Kotlin bodies: `1`")
         assertContains(summary, "Function declarations: Java `1`, Kotlin `1`")
-        assertContains(summary, "Control-flow fidelity score: `0.400` (returns `0/1`, branches `0/0`, throws `0/0`, tries `0/0`)")
-        assertContains(summary, "Content-shape preservation rate: `1.000` (`1/1` matched files preserved; mismatches `0`)")
+        assertContains(summary, "Content shape preserved files: 1/1 (100.0%)")
+        assertContains(summary, "Returns preserved: 0/1 (0.0%)")
+        assertContains(summary, "Branches preserved: 1/0 (100.0%, capped)")
+        assertContains(summary, "Throws preserved: 0/0 (100.0%)")
+        assertContains(summary, "Try blocks preserved: 0/0 (100.0%)")
+        assertContains(summary, "Control-flow fidelity score: returns 0/1, branches 1/0, throws 0/0, tries 0/0 (40.0%)")
+        assertContains(summary, "Java return rate: 1/1 = 1.000")
+        assertContains(summary, "Kotlin return rate: 0/1 = 0.000")
         assertContains(
             summary,
-            "Return density: Java `1.000`, Kotlin `0.000`, preservation `0.000` (returns per function `1/1` vs `0/1`)",
+            "Return rate preserved: 0.000/1.000 (0.0%)",
+        )
+        assertContains(summary, "Java control-flow rate: 1/1 = 1.000")
+        assertContains(summary, "Kotlin control-flow rate: 3/1 = 3.000")
+        assertContains(
+            summary,
+            "Control-flow rate preserved: 3.000/1.000 (100.0%, capped)",
         )
         assertContains(summary, "`App.kt#run`")
         assertContains(summary, "## Nullability Signals")
         assertContains(summary, "Total nullability operations: `2` (null comparisons `1`, casts `1`, safe calls `0`)")
-        assertContains(summary, "Nullability inference accuracy: `0.500`")
+        assertContains(summary, "Nullability inference accuracy: 1/2 (50.0%)")
         assertContains(summary, "Nullable annotations not preserved: `1`")
         assertContains(summary, "`App.kt#name`")
         assertContains(summary, "Missing generated Kotlin files: `1`")
@@ -106,7 +123,8 @@ class EvaluationReportWriterTest {
 
         val summary = reportDirectory.resolve("summary.md").readText()
         assertContains(summary, "Static J2K generated Kotlin for every configured Java input")
-        assertContains(summary, "Coverage: `1` of `1` configured Java inputs")
+        assertContains(summary, "Coverage: `1` of `1` Java inputs")
+        assertContains(summary, "## Conversion Coverage")
         assertContains(summary, "## Content Preservation")
         assertContains(summary, "## Nullability Signals")
         assertContains(summary, "## Notable Failures")
@@ -311,9 +329,9 @@ class EvaluationReportWriterTest {
             javaReturnCount = 1,
             kotlinReturnCount = 0,
             javaBranchCount = 0,
-            kotlinBranchCount = 0,
-            javaLoopCount = 0,
-            kotlinLoopCount = 0,
+            kotlinBranchCount = 1,
+            javaLoopCount = 1,
+            kotlinLoopCount = 2,
             javaThrowCount = 0,
             kotlinThrowCount = 0,
             javaTryCount = 0,
@@ -331,8 +349,8 @@ class EvaluationReportWriterTest {
             javaReturnDensity = 1.0,
             kotlinReturnDensity = 0.0,
             returnStatementDensityPreservation = 0.0,
-            javaBranchComplexityIndex = 0.0,
-            kotlinBranchComplexityIndex = 0.0,
+            javaBranchComplexityIndex = 1.0,
+            kotlinBranchComplexityIndex = 2.0,
             branchComplexityIndexPreservation = 1.0,
             findings =
                 listOf(

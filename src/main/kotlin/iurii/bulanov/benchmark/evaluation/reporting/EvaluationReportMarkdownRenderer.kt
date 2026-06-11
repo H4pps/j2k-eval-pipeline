@@ -22,11 +22,10 @@ internal class EvaluationReportMarkdownRenderer : EvaluationReportRenderer {
     override fun render(result: EvaluationResult): String =
         buildString {
             appendLine("# J2K Evaluation Summary")
-            appendResultInterpretation(result)
+            appendSummary(result)
             appendPaths(result)
-            appendConversion(result.conversion)
+            appendConversionCoverage(result.conversion, result.fileCoverage)
             appendCheckout(result.checkout)
-            appendFileCoverage(result.fileCoverage)
             appendStructure(result.structure)
             appendContent(result.content)
             appendNullability(result.nullability)
@@ -35,15 +34,19 @@ internal class EvaluationReportMarkdownRenderer : EvaluationReportRenderer {
             appendWarnings(result)
         }
 
-    private fun StringBuilder.appendResultInterpretation(result: EvaluationResult) {
+    private fun StringBuilder.appendSummary(result: EvaluationResult) {
         appendLine()
-        appendLine("## Result Interpretation")
+        appendLine("## Summary")
         appendLine()
         appendLine("- Verdict: ${resultVerdict(result)}")
+        appendLine("- Converter status: `${result.conversion.status}`")
         appendLine(
             "- Coverage: `${result.fileCoverage.matchedKotlinFileCount}` of `${result.fileCoverage.javaFileCount}` " +
-                "configured Java inputs have matching generated Kotlin files " +
+                "Java inputs have matching generated Kotlin files " +
                 "(`${formatPercent(result.fileCoverage.coveragePercent)}%`).",
+        )
+        appendLine(
+            "- Converter issues: `${result.conversion.warningCount}` warnings, `${result.conversion.errorCount}` errors.",
         )
         appendLine(
             "- Structural comparison: Java declarations/functions are compared with generated Kotlin " +
@@ -71,14 +74,25 @@ internal class EvaluationReportMarkdownRenderer : EvaluationReportRenderer {
         appendLine("- Report directory: `${result.reportDirectory}`")
     }
 
-    private fun StringBuilder.appendConversion(conversion: ConversionEvaluation) {
+    private fun StringBuilder.appendConversionCoverage(
+        conversion: ConversionEvaluation,
+        fileCoverage: FileCoverageMetrics,
+    ) {
         appendLine()
-        appendLine("## Conversion Execution")
+        appendLine("## Conversion Coverage")
         appendLine()
-        appendLine("- Available: `${conversion.available}`")
-        appendLine("- Status: `${conversion.status}`")
+        appendLine("- Conversion metadata available: `${conversion.available}`")
+        appendLine("- Converter status: `${conversion.status}`")
         appendLine("- Source Java files: `${conversion.sourceJavaFileCount ?: "unknown"}`")
         appendLine("- Generated Kotlin files: `${conversion.generatedKotlinFileCount ?: "unknown"}`")
+        appendLine("- Java files discovered: `${fileCoverage.javaFileCount}`")
+        appendLine("- Kotlin files discovered: `${fileCoverage.kotlinFileCount}`")
+        appendLine("- Matched Kotlin files: `${fileCoverage.matchedKotlinFileCount}`")
+        appendLine("- Coverage: `${formatPercent(fileCoverage.coveragePercent)}%`")
+        appendLine("- Missing Kotlin files: `${fileCoverage.missingKotlinFiles.size}`")
+        appendLine("- Unexpected Kotlin files: `${fileCoverage.unexpectedKotlinFiles.size}`")
+        appendLine("- Empty generated files: `${fileCoverage.emptyGeneratedFiles.size}`")
+        appendLine("- Package preservation: `${formatPercent(fileCoverage.packagePreservationPercent)}%`")
         appendLine("- Converter warnings: `${conversion.warningCount}`")
         appendLine("- Converter errors: `${conversion.errorCount}`")
     }
@@ -92,20 +106,6 @@ internal class EvaluationReportMarkdownRenderer : EvaluationReportRenderer {
         appendLine("- Run build: `${checkout.runBuild ?: "unknown"}`")
     }
 
-    private fun StringBuilder.appendFileCoverage(fileCoverage: FileCoverageMetrics) {
-        appendLine()
-        appendLine("## File Coverage")
-        appendLine()
-        appendLine("- Java files discovered: `${fileCoverage.javaFileCount}`")
-        appendLine("- Kotlin files discovered: `${fileCoverage.kotlinFileCount}`")
-        appendLine("- Matched Kotlin files: `${fileCoverage.matchedKotlinFileCount}`")
-        appendLine("- Coverage: `${formatPercent(fileCoverage.coveragePercent)}%`")
-        appendLine("- Missing Kotlin files: `${fileCoverage.missingKotlinFiles.size}`")
-        appendLine("- Unexpected Kotlin files: `${fileCoverage.unexpectedKotlinFiles.size}`")
-        appendLine("- Empty generated files: `${fileCoverage.emptyGeneratedFiles.size}`")
-        appendLine("- Package preservation: `${formatPercent(fileCoverage.packagePreservationPercent)}%`")
-    }
-
     private fun StringBuilder.appendStructure(structure: StructuralMetrics) {
         appendLine()
         appendLine("## Structural Preservation")
@@ -113,7 +113,7 @@ internal class EvaluationReportMarkdownRenderer : EvaluationReportRenderer {
         appendLine(
             "Generated Kotlin is compared with " +
                 "the original Java source using deterministic structural heuristics. Name-level structural diffs are " +
-                "calculated only for matched Java/Kotlin files; missing generated files are reported under File Coverage.",
+                "calculated only for matched Java/Kotlin files; missing generated files are reported under Conversion Coverage.",
         )
         appendLine()
         appendLine("- Java declarations: `${structure.javaTopLevelDeclarationCount}`")
@@ -176,6 +176,14 @@ internal class EvaluationReportMarkdownRenderer : EvaluationReportRenderer {
     }
 
     private fun StringBuilder.appendContent(content: ContentMetrics) {
+        appendContentHeader()
+        appendContentCounts(content)
+        appendContentPreservation(content)
+        appendNameList("Java method bodies missing in Kotlin", content.missingKotlinBodies)
+        appendNameList("Files with content-shape mismatches", content.contentShapeMismatchFiles)
+    }
+
+    private fun StringBuilder.appendContentHeader() {
         appendLine()
         appendLine("## Content Preservation")
         appendLine()
@@ -184,6 +192,9 @@ internal class EvaluationReportMarkdownRenderer : EvaluationReportRenderer {
                 "body-shape heuristics.",
         )
         appendLine()
+    }
+
+    private fun StringBuilder.appendContentCounts(content: ContentMetrics) {
         appendLine("- Matched files analyzed: `${content.matchedFileCount}`")
         appendLine("- Java non-empty methods: `${content.javaNonEmptyMethodCount}`")
         appendLine("- Kotlin non-empty functions: `${content.kotlinNonEmptyFunctionCount}`")
@@ -199,35 +210,112 @@ internal class EvaluationReportMarkdownRenderer : EvaluationReportRenderer {
         appendLine(
             "- Function declarations: Java `${content.javaFunctionDeclarationCount}`, Kotlin `${content.kotlinFunctionDeclarationCount}`",
         )
+    }
+
+    private fun StringBuilder.appendContentPreservation(content: ContentMetrics) {
+        appendContentShapePreservation(content)
+        appendControlFlowPreservation(content)
+        appendDensityPreservation(content)
+    }
+
+    private fun StringBuilder.appendContentShapePreservation(content: ContentMetrics) {
         appendLine(
-            "- Control-flow fidelity score: `${formatScore(content.controlFlowFidelityScore)}` " +
-                "(returns `${content.kotlinReturnCount}/${content.javaReturnCount}`, " +
-                "branches `${content.kotlinBranchCount}/${content.javaBranchCount}`, " +
-                "throws `${content.kotlinThrowCount}/${content.javaThrowCount}`, " +
-                "tries `${content.kotlinTryCount}/${content.javaTryCount}`)",
+            "- Content shape preserved files: " +
+                countPreservation(
+                    numerator = content.contentShapePreservedFileCount,
+                    denominator = content.matchedFileCount,
+                    score = content.contentShapePreservationRate,
+                ) +
+                " (mismatches `${content.contentShapeMismatchFileCount}`)",
+        )
+    }
+
+    private fun StringBuilder.appendControlFlowPreservation(content: ContentMetrics) {
+        appendLine(
+            "- Returns preserved: " +
+                countPreservation(
+                    numerator = content.kotlinReturnCount,
+                    denominator = content.javaReturnCount,
+                    score = content.returnPreservationRatio,
+                ),
         )
         appendLine(
-            "- Content-shape preservation rate: `${formatScore(content.contentShapePreservationRate)}` " +
-                "(`${content.contentShapePreservedFileCount}/${content.matchedFileCount}` matched files preserved; " +
-                "mismatches `${content.contentShapeMismatchFileCount}`)",
+            "- Branches preserved: " +
+                countPreservation(
+                    numerator = content.kotlinBranchCount,
+                    denominator = content.javaBranchCount,
+                    score = content.branchPreservationRatio,
+                ),
         )
         appendLine(
-            "- Return density: Java `${formatScore(content.javaReturnDensity)}`, " +
-                "Kotlin `${formatScore(content.kotlinReturnDensity)}`, " +
-                "preservation `${formatScore(content.returnStatementDensityPreservation)}` " +
-                "(returns per function `${content.javaReturnCount}/${content.javaFunctionDeclarationCount}` vs " +
-                "`${content.kotlinReturnCount}/${content.kotlinFunctionDeclarationCount}`)",
+            "- Throws preserved: " +
+                countPreservation(
+                    numerator = content.kotlinThrowCount,
+                    denominator = content.javaThrowCount,
+                    score = content.throwPreservationRatio,
+                ),
         )
         appendLine(
-            "- Branch complexity index: Java `${formatScore(content.javaBranchComplexityIndex)}`, " +
-                "Kotlin `${formatScore(content.kotlinBranchComplexityIndex)}`, " +
-                "preservation `${formatScore(content.branchComplexityIndexPreservation)}` " +
-                "(branches+loops+tries per function " +
-                "`${content.javaBranchCount + content.javaLoopCount + content.javaTryCount}/${content.javaFunctionDeclarationCount}` vs " +
-                "`${content.kotlinBranchCount + content.kotlinLoopCount + content.kotlinTryCount}/${content.kotlinFunctionDeclarationCount}`)",
+            "- Try blocks preserved: " +
+                countPreservation(
+                    numerator = content.kotlinTryCount,
+                    denominator = content.javaTryCount,
+                    score = content.tryPreservationRatio,
+                ),
         )
-        appendNameList("Java method bodies missing in Kotlin", content.missingKotlinBodies)
-        appendNameList("Files with content-shape mismatches", content.contentShapeMismatchFiles)
+        appendLine(
+            "- Control-flow fidelity score: " +
+                "returns ${content.kotlinReturnCount}/${content.javaReturnCount}, " +
+                "branches ${content.kotlinBranchCount}/${content.javaBranchCount}, " +
+                "throws ${content.kotlinThrowCount}/${content.javaThrowCount}, " +
+                "tries ${content.kotlinTryCount}/${content.javaTryCount} " +
+                "(${formatScorePercent(content.controlFlowFidelityScore)})",
+        )
+    }
+
+    private fun StringBuilder.appendDensityPreservation(content: ContentMetrics) {
+        appendLine(
+            "- Java return rate: " +
+                rate(content.javaReturnCount, content.javaFunctionDeclarationCount),
+        )
+        appendLine(
+            "- Kotlin return rate: " +
+                rate(content.kotlinReturnCount, content.kotlinFunctionDeclarationCount),
+        )
+        appendLine(
+            "- Return rate preserved: " +
+                ratePreservation(
+                    javaNumerator = content.javaReturnCount,
+                    javaDenominator = content.javaFunctionDeclarationCount,
+                    kotlinNumerator = content.kotlinReturnCount,
+                    kotlinDenominator = content.kotlinFunctionDeclarationCount,
+                    score = content.returnStatementDensityPreservation,
+                ),
+        )
+        val javaControlFlowCount = content.javaBranchCount + content.javaLoopCount + content.javaTryCount
+        val kotlinControlFlowCount = content.kotlinBranchCount + content.kotlinLoopCount + content.kotlinTryCount
+        appendLine(
+            "- Java control-flow rate: " +
+                rate(javaControlFlowCount, content.javaFunctionDeclarationCount),
+        )
+        appendLine(
+            "- Kotlin control-flow rate: " +
+                rate(kotlinControlFlowCount, content.kotlinFunctionDeclarationCount),
+        )
+        appendLine(
+            "- Control-flow rate preserved: " +
+                controlFlowRatePreservation(
+                    javaBranchCount = content.javaBranchCount,
+                    javaLoopCount = content.javaLoopCount,
+                    javaTryCount = content.javaTryCount,
+                    javaFunctionCount = content.javaFunctionDeclarationCount,
+                    kotlinBranchCount = content.kotlinBranchCount,
+                    kotlinLoopCount = content.kotlinLoopCount,
+                    kotlinTryCount = content.kotlinTryCount,
+                    kotlinFunctionCount = content.kotlinFunctionDeclarationCount,
+                    score = content.branchComplexityIndexPreservation,
+                ),
+        )
     }
 
     private fun StringBuilder.appendNullability(nullability: NullabilityMetrics) {
@@ -247,7 +335,7 @@ internal class EvaluationReportMarkdownRenderer : EvaluationReportRenderer {
                 "(null comparisons `${nullability.nullComparisonCount}`, casts `${nullability.nullabilityCastCount}`, " +
                 "safe calls `${nullability.safeCallCount}`)",
         )
-        appendLine("- Nullability inference accuracy: `${formatScore(nullability.nullabilityInferenceAccuracy)}`")
+        appendLine("- Nullability inference accuracy: ${nullabilityInferenceAccuracy(nullability)}")
         appendLine("- Nullable annotations not preserved: `${nullability.nullableAnnotationsNotPreserved.size}`")
         appendLine("- Not-null annotations converted to nullable: `${nullability.notNullAnnotationsBecameNullable.size}`")
         appendNameList("Nullable Java declarations not preserved as nullable Kotlin", nullability.nullableAnnotationsNotPreserved)
@@ -391,8 +479,116 @@ internal class EvaluationReportMarkdownRenderer : EvaluationReportRenderer {
 
     private fun formatScore(value: Double): String = String.format(Locale.US, "%.3f", value)
 
+    private fun formatScorePercent(value: Double): String = String.format(Locale.US, "%.1f%%", value * PERCENT_SCALE)
+
+    private fun countPreservation(
+        numerator: Int,
+        denominator: Int,
+        score: Double,
+    ): String = "$numerator/$denominator (${formatScorePercent(score)}${cappedSuffix(numerator, denominator, score)})"
+
+    private fun nullabilityInferenceAccuracy(nullability: NullabilityMetrics): String {
+        val nonContradictoryOperations =
+            (nullability.totalNullabilityOperationCount - nullability.contradictoryNullabilityPatterns).coerceAtLeast(0)
+        return "$nonContradictoryOperations/${nullability.totalNullabilityOperationCount} " +
+            "(${formatScorePercent(nullability.nullabilityInferenceAccuracy)})"
+    }
+
+    private fun ratePreservation(
+        javaNumerator: Int,
+        javaDenominator: Int,
+        kotlinNumerator: Int,
+        kotlinDenominator: Int,
+        score: Double,
+    ): String {
+        val javaRate = density(javaNumerator, javaDenominator)
+        val kotlinRate = density(kotlinNumerator, kotlinDenominator)
+        return "${formatRate(kotlinRate)}/${formatRate(javaRate)} " +
+            "(${formatScorePercent(score)}${cappedDensitySuffix(javaRate, kotlinRate, score)})"
+    }
+
+    private fun controlFlowRatePreservation(
+        javaBranchCount: Int,
+        javaLoopCount: Int,
+        javaTryCount: Int,
+        javaFunctionCount: Int,
+        kotlinBranchCount: Int,
+        kotlinLoopCount: Int,
+        kotlinTryCount: Int,
+        kotlinFunctionCount: Int,
+        score: Double,
+    ): String {
+        val javaComplexityCount = javaBranchCount + javaLoopCount + javaTryCount
+        val kotlinComplexityCount = kotlinBranchCount + kotlinLoopCount + kotlinTryCount
+        val javaRate = density(javaComplexityCount, javaFunctionCount)
+        val kotlinRate = density(kotlinComplexityCount, kotlinFunctionCount)
+        return "${formatRate(kotlinRate)}/${formatRate(javaRate)} " +
+            "(${formatScorePercent(score)}${cappedDensitySuffix(javaRate, kotlinRate, score)})"
+    }
+
+    private fun cappedSuffix(
+        numerator: Int,
+        denominator: Int,
+        score: Double,
+    ): String =
+        if (score >= PERFECT_PRESERVATION && numeratorExceedsDenominator(numerator, denominator)) {
+            ", capped"
+        } else {
+            ""
+        }
+
+    private fun cappedDensitySuffix(
+        javaDensity: Double,
+        kotlinDensity: Double,
+        score: Double,
+    ): String =
+        if (score >= PERFECT_PRESERVATION && kotlinDensityExceedsJavaDensity(kotlinDensity, javaDensity)) {
+            ", capped"
+        } else {
+            ""
+        }
+
+    private fun numeratorExceedsDenominator(
+        numerator: Int,
+        denominator: Int,
+    ): Boolean =
+        if (denominator == 0) {
+            numerator > 0
+        } else {
+            numerator.toDouble() / denominator.toDouble() > PERFECT_PRESERVATION
+        }
+
+    private fun kotlinDensityExceedsJavaDensity(
+        kotlinDensity: Double,
+        javaDensity: Double,
+    ): Boolean =
+        if (javaDensity == 0.0) {
+            kotlinDensity > 0.0
+        } else {
+            kotlinDensity / javaDensity > PERFECT_PRESERVATION
+        }
+
+    private fun density(
+        numerator: Int,
+        denominator: Int,
+    ): Double =
+        if (denominator == 0) {
+            0.0
+        } else {
+            numerator.toDouble() / denominator.toDouble()
+        }
+
+    private fun rate(
+        numerator: Int,
+        denominator: Int,
+    ): String = "$numerator/$denominator = ${formatRate(density(numerator, denominator))}"
+
+    private fun formatRate(value: Double): String = String.format(Locale.US, "%.3f", value)
+
     private companion object {
         private const val COMPLETE_COVERAGE = 100.0
+        private const val PERCENT_SCALE = 100.0
+        private const val PERFECT_PRESERVATION = 1.0
         private const val STRUCTURAL_NAME_DISPLAY_LIMIT = 50
     }
 }

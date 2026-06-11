@@ -88,9 +88,9 @@ class ComparisonReportWriter(
         appendRow("Conversion status", kinds.map { it.text("conversion", "status") ?: "—" })
         appendRow("Coverage %", kinds.map { percent(it.number("file_coverage", "coverage_percent")) })
         appendRow("Matched / Java", kinds.map { matchedOverJava(it) })
-        appendRow("Missing outputs", kinds.map { it.listSize("file_coverage", "missing_kotlin_files").toString() })
+        appendRow("Missing outputs", kinds.map { listSizeCell(it, "file_coverage", "missing_kotlin_files") })
         appendRow("Control-flow fidelity", kinds.map { score(it.number("content", "control_flow_fidelity_score")) })
-        appendRow("Nullability inference accuracy", kinds.map { score(it.number("nullability", "nullability_inference_accuracy")) })
+        appendRow("Nullability inference accuracy", kinds.map { nullabilityAccuracyCell(it) })
         appendRow("`!!` assertions", kinds.map { (it.int("quality", "not_null_assertion_count") ?: "—").toString() })
         appendRow("Evaluator warnings", kinds.map { it.warningCount.toString() })
         appendLowCoverageWarnings(kinds)
@@ -129,7 +129,7 @@ class ComparisonReportWriter(
         appendLine()
         appendRow("Metric", kinds.map { "`${it.kind.id}`" })
         appendSeparator(kinds.size)
-        section.rows.forEach { row ->
+        markdownRows(section).forEach { row ->
             appendRow(row.label, kinds.map { cell(it, row) })
         }
     }
@@ -179,7 +179,13 @@ class ComparisonReportWriter(
             MetricType.PERCENT -> percent(kind.number(row.section, row.key))
             MetricType.SCORE -> score(kind.number(row.section, row.key))
             MetricType.TEXT -> kind.text(row.section, row.key) ?: "—"
-            MetricType.LIST_SIZE -> kind.listSize(row.section, row.key).toString()
+            MetricType.LIST_SIZE -> listSizeCell(kind, row)
+            MetricType.CONTENT_SHAPE -> contentShapeCell(kind)
+            MetricType.COUNT_PRESERVATION -> countPreservationCell(kind, row.key)
+            MetricType.RATE -> rateCell(kind, row.key)
+            MetricType.RETURN_DENSITY -> returnDensityCell(kind)
+            MetricType.BRANCH_COMPLEXITY -> branchComplexityCell(kind)
+            MetricType.NULLABILITY_ACCURACY -> nullabilityAccuracyCell(kind)
         }
 
     /**
@@ -212,7 +218,136 @@ class ComparisonReportWriter(
             MetricType.SCORE -> kind.number(row.section, row.key)
             MetricType.TEXT -> kind.text(row.section, row.key)
             MetricType.LIST_SIZE -> kind.listSize(row.section, row.key)
+            MetricType.CONTENT_SHAPE -> kind.int(row.section, row.key)
+            MetricType.COUNT_PRESERVATION -> kind.number(row.section, row.key)
+            MetricType.RATE -> kind.number(row.section, row.key)
+            MetricType.RETURN_DENSITY -> kind.number(row.section, row.key)
+            MetricType.BRANCH_COMPLEXITY -> kind.number(row.section, row.key)
+            MetricType.NULLABILITY_ACCURACY -> kind.number(row.section, row.key)
         }
+
+    /** Renders list sizes while preserving absent fields as unknown. */
+    private fun listSizeCell(
+        kind: KindEvaluation,
+        row: MetricRow,
+    ): String = listSizeCell(kind, row.section, row.key)
+
+    private fun listSizeCell(
+        kind: KindEvaluation,
+        section: String,
+        key: String,
+    ): String =
+        if (kind.hasMetric(section, key)) {
+            kind.listSize(section, key).toString()
+        } else {
+            "—"
+        }
+
+    /** Returns the Markdown rows for [section], with count-first content rows. */
+    private fun markdownRows(section: ReportSection): List<MetricRow> =
+        if (section.title == CONTENT_PRESERVATION_SECTION_TITLE) {
+            CONTENT_MARKDOWN_ROWS
+        } else {
+            section.rows
+        }
+
+    /** Renders the content-shape preservation cell from existing content counts and score. */
+    private fun contentShapeCell(kind: KindEvaluation): String {
+        val preserved = kind.int("content", "content_shape_preserved_file_count") ?: return "—"
+        val matched = kind.int("content", "matched_file_count") ?: return "—"
+        val score = kind.number("content", "content_shape_preservation_rate") ?: return "—"
+        return countPreservation(preserved, matched, score)
+    }
+
+    /** Renders a control-flow count preservation cell selected by [scoreKey]. */
+    private fun countPreservationCell(
+        kind: KindEvaluation,
+        scoreKey: String,
+    ): String {
+        val keys =
+            when (scoreKey) {
+                "return_preservation_ratio" -> CountPreservationKeys("kotlin_return_count", "java_return_count")
+                "branch_preservation_ratio" -> CountPreservationKeys("kotlin_branch_count", "java_branch_count")
+                "throw_preservation_ratio" -> CountPreservationKeys("kotlin_throw_count", "java_throw_count")
+                "try_preservation_ratio" -> CountPreservationKeys("kotlin_try_count", "java_try_count")
+                else -> return "—"
+            }
+        val kotlinCount = kind.int("content", keys.kotlinKey) ?: return "—"
+        val javaCount = kind.int("content", keys.javaKey) ?: return "—"
+        val score = kind.number("content", scoreKey) ?: return "—"
+        return countPreservation(kotlinCount, javaCount, score)
+    }
+
+    /** Renders a Java or Kotlin rate from the underlying count and function declaration fields. */
+    private fun rateCell(
+        kind: KindEvaluation,
+        key: String,
+    ): String {
+        val (numeratorKey, denominatorKey) =
+            when (key) {
+                "java_return_density" -> "java_return_count" to "java_function_declaration_count"
+                "kotlin_return_density" -> "kotlin_return_count" to "kotlin_function_declaration_count"
+                "java_control_flow_rate" -> "java_control_flow_count" to "java_function_declaration_count"
+                "kotlin_control_flow_rate" -> "kotlin_control_flow_count" to "kotlin_function_declaration_count"
+                else -> return "—"
+            }
+        val numerator = countForRate(kind, numeratorKey) ?: return "—"
+        val denominator = kind.int("content", denominatorKey) ?: return "—"
+        return rate(numerator, denominator)
+    }
+
+    private fun countForRate(
+        kind: KindEvaluation,
+        key: String,
+    ): Int? =
+        when (key) {
+            "java_control_flow_count" ->
+                kind
+                    .int("content", "java_branch_count")
+                    ?.plus(kind.int("content", "java_loop_count") ?: return null)
+                    ?.plus(kind.int("content", "java_try_count") ?: return null)
+            "kotlin_control_flow_count" ->
+                kind
+                    .int("content", "kotlin_branch_count")
+                    ?.plus(kind.int("content", "kotlin_loop_count") ?: return null)
+                    ?.plus(kind.int("content", "kotlin_try_count") ?: return null)
+            else -> kind.int("content", key)
+        }
+
+    /** Renders return-statement density from return and function counts. */
+    private fun returnDensityCell(kind: KindEvaluation): String {
+        val javaReturns = kind.int("content", "java_return_count") ?: return "—"
+        val kotlinReturns = kind.int("content", "kotlin_return_count") ?: return "—"
+        val javaFunctions = kind.int("content", "java_function_declaration_count") ?: return "—"
+        val kotlinFunctions = kind.int("content", "kotlin_function_declaration_count") ?: return "—"
+        val score = kind.number("content", "return_statement_density_preservation") ?: return "—"
+        return ratePreservation(javaReturns, javaFunctions, kotlinReturns, kotlinFunctions, score)
+    }
+
+    /** Renders branch complexity from branch, loop, try, and function counts. */
+    private fun branchComplexityCell(kind: KindEvaluation): String {
+        val javaBranches = kind.int("content", "java_branch_count") ?: return "—"
+        val javaLoops = kind.int("content", "java_loop_count") ?: return "—"
+        val javaTries = kind.int("content", "java_try_count") ?: return "—"
+        val javaFunctions = kind.int("content", "java_function_declaration_count") ?: return "—"
+        val kotlinBranches = kind.int("content", "kotlin_branch_count") ?: return "—"
+        val kotlinLoops = kind.int("content", "kotlin_loop_count") ?: return "—"
+        val kotlinTries = kind.int("content", "kotlin_try_count") ?: return "—"
+        val kotlinFunctions = kind.int("content", "kotlin_function_declaration_count") ?: return "—"
+        val score = kind.number("content", "branch_complexity_index_preservation") ?: return "—"
+        val javaComplexityCount = javaBranches + javaLoops + javaTries
+        val kotlinComplexityCount = kotlinBranches + kotlinLoops + kotlinTries
+        return ratePreservation(javaComplexityCount, javaFunctions, kotlinComplexityCount, kotlinFunctions, score)
+    }
+
+    /** Renders nullability inference accuracy as non-contradictory operations over all operations. */
+    private fun nullabilityAccuracyCell(kind: KindEvaluation): String {
+        val total = kind.int("nullability", "total_nullability_operation_count") ?: return "—"
+        val contradictory = kind.int("nullability", "contradictory_nullability_patterns") ?: return "—"
+        val score = kind.number("nullability", "nullability_inference_accuracy") ?: return "—"
+        val nonContradictory = (total - contradictory).coerceAtLeast(0)
+        return "$nonContradictory/$total (${scorePercent(score)})"
+    }
 
     /** Formats "matched / total Java files" for a kind. */
     private fun matchedOverJava(kind: KindEvaluation): String {
@@ -240,9 +375,162 @@ class ComparisonReportWriter(
     /** Formats a score-style ratio with a stable decimal separator, or `—` when absent. */
     private fun score(value: Double?): String = value?.let { String.format(Locale.US, "%.3f", it) } ?: "—"
 
+    private fun scorePercent(value: Double): String = String.format(Locale.US, "%.1f%%", value * PERCENT_SCALE)
+
+    private fun countPreservation(
+        numerator: Int,
+        denominator: Int,
+        score: Double,
+    ): String = "$numerator/$denominator (${scorePercent(score)}${cappedSuffix(numerator, denominator, score)})"
+
+    private fun ratePreservation(
+        javaNumerator: Int,
+        javaDenominator: Int,
+        kotlinNumerator: Int,
+        kotlinDenominator: Int,
+        score: Double,
+    ): String {
+        val javaRate = density(javaNumerator, javaDenominator)
+        val kotlinRate = density(kotlinNumerator, kotlinDenominator)
+        return "${formatRate(kotlinRate)}/${formatRate(javaRate)} " +
+            "(${scorePercent(score)}${cappedDensitySuffix(javaRate, kotlinRate, score)})"
+    }
+
+    private fun cappedSuffix(
+        numerator: Int,
+        denominator: Int,
+        score: Double,
+    ): String =
+        if (score >= PERFECT_PRESERVATION && numeratorExceedsDenominator(numerator, denominator)) {
+            ", capped"
+        } else {
+            ""
+        }
+
+    private fun cappedDensitySuffix(
+        javaDensity: Double,
+        kotlinDensity: Double,
+        score: Double,
+    ): String =
+        if (score >= PERFECT_PRESERVATION && kotlinDensityExceedsJavaDensity(kotlinDensity, javaDensity)) {
+            ", capped"
+        } else {
+            ""
+        }
+
+    private fun numeratorExceedsDenominator(
+        numerator: Int,
+        denominator: Int,
+    ): Boolean =
+        if (denominator == 0) {
+            numerator > 0
+        } else {
+            numerator.toDouble() / denominator.toDouble() > PERFECT_PRESERVATION
+        }
+
+    private fun kotlinDensityExceedsJavaDensity(
+        kotlinDensity: Double,
+        javaDensity: Double,
+    ): Boolean =
+        if (javaDensity == 0.0) {
+            kotlinDensity > 0.0
+        } else {
+            kotlinDensity / javaDensity > PERFECT_PRESERVATION
+        }
+
+    private fun density(
+        numerator: Int,
+        denominator: Int,
+    ): Double =
+        if (denominator == 0) {
+            0.0
+        } else {
+            numerator.toDouble() / denominator.toDouble()
+        }
+
+    private fun rate(
+        numerator: Int,
+        denominator: Int,
+    ): String = "$numerator/$denominator = ${formatRate(density(numerator, denominator))}"
+
+    private fun formatRate(value: Double): String = String.format(Locale.US, "%.3f", value)
+
     private companion object {
         /** Below this coverage a kind's quality counts are flagged as not comparable. */
         private const val LOW_COVERAGE_WARNING_PERCENT = 90.0
+
+        private const val CONTENT_PRESERVATION_SECTION_TITLE = "Content Preservation"
+        private const val PERCENT_SCALE = 100.0
+        private const val PERFECT_PRESERVATION = 1.0
+
+        private val CONTENT_MARKDOWN_ROWS =
+            listOf(
+                MetricRow("Matched files", "content", "matched_file_count", MetricType.INT),
+                MetricRow("Java non-empty methods", "content", "java_non_empty_method_count", MetricType.INT),
+                MetricRow("Kotlin non-empty functions", "content", "kotlin_non_empty_function_count", MetricType.INT),
+                MetricRow("Missing Kotlin bodies", "content", "missing_kotlin_bodies", MetricType.LIST_SIZE),
+                MetricRow("Content-shape mismatches", "content", "content_shape_mismatch_files", MetricType.LIST_SIZE),
+                MetricRow("Java function declarations", "content", "java_function_declaration_count", MetricType.INT),
+                MetricRow("Kotlin function declarations", "content", "kotlin_function_declaration_count", MetricType.INT),
+                MetricRow(
+                    "Content shape preserved files (preserved/matched files)",
+                    "content",
+                    "content_shape_preserved_file_count",
+                    MetricType.CONTENT_SHAPE,
+                ),
+                MetricRow("Content-shape mismatch file count", "content", "content_shape_mismatch_file_count", MetricType.INT),
+                MetricRow(
+                    "Returns preserved (Kotlin/Java returns)",
+                    "content",
+                    "return_preservation_ratio",
+                    MetricType.COUNT_PRESERVATION,
+                ),
+                MetricRow(
+                    "Branches preserved (Kotlin/Java branches)",
+                    "content",
+                    "branch_preservation_ratio",
+                    MetricType.COUNT_PRESERVATION,
+                ),
+                MetricRow(
+                    "Throws preserved (Kotlin/Java throws)",
+                    "content",
+                    "throw_preservation_ratio",
+                    MetricType.COUNT_PRESERVATION,
+                ),
+                MetricRow(
+                    "Try blocks preserved (Kotlin/Java try blocks)",
+                    "content",
+                    "try_preservation_ratio",
+                    MetricType.COUNT_PRESERVATION,
+                ),
+                MetricRow("Control-flow fidelity score", "content", "control_flow_fidelity_score", MetricType.SCORE),
+                MetricRow("Java return rate (Java returns/functions)", "content", "java_return_density", MetricType.RATE),
+                MetricRow("Kotlin return rate (Kotlin returns/functions)", "content", "kotlin_return_density", MetricType.RATE),
+                MetricRow(
+                    "Return rate preserved (Kotlin/Java return rate)",
+                    "content",
+                    "return_statement_density_preservation",
+                    MetricType.RETURN_DENSITY,
+                ),
+                MetricRow(
+                    "Java control-flow rate ((branches + loops + tries)/functions)",
+                    "content",
+                    "java_control_flow_rate",
+                    MetricType.RATE,
+                ),
+                MetricRow(
+                    "Kotlin control-flow rate ((branches + loops + tries)/functions)",
+                    "content",
+                    "kotlin_control_flow_rate",
+                    MetricType.RATE,
+                ),
+                MetricRow(
+                    "Control-flow rate preserved (Kotlin/Java control-flow rate)",
+                    "content",
+                    "branch_complexity_index_preservation",
+                    MetricType.BRANCH_COMPLEXITY,
+                ),
+            )
 
         private val SECTIONS =
             listOf(
@@ -337,7 +625,12 @@ class ComparisonReportWriter(
                         MetricRow("Nullability casts", "nullability", "nullability_cast_count", MetricType.INT),
                         MetricRow("Safe calls", "nullability", "safe_call_count", MetricType.INT),
                         MetricRow("Total nullability operations", "nullability", "total_nullability_operation_count", MetricType.INT),
-                        MetricRow("Nullability inference accuracy", "nullability", "nullability_inference_accuracy", MetricType.SCORE),
+                        MetricRow(
+                            "Nullability inference accuracy (non-contradictory/total operations)",
+                            "nullability",
+                            "nullability_inference_accuracy",
+                            MetricType.NULLABILITY_ACCURACY,
+                        ),
                         MetricRow("Nullable not preserved", "nullability", "nullable_annotations_not_preserved", MetricType.LIST_SIZE),
                         MetricRow("Not-null became nullable", "nullability", "not_null_annotations_became_nullable", MetricType.LIST_SIZE),
                     ),
@@ -374,5 +667,23 @@ private data class ReportSection(
     val rows: List<MetricRow>,
 )
 
+/** JSON keys and labels for a generated/source count preservation row. */
+private data class CountPreservationKeys(
+    val kotlinKey: String,
+    val javaKey: String,
+)
+
 /** How a metric value is read and rendered. */
-private enum class MetricType { INT, PERCENT, SCORE, TEXT, LIST_SIZE }
+private enum class MetricType {
+    INT,
+    PERCENT,
+    SCORE,
+    TEXT,
+    LIST_SIZE,
+    CONTENT_SHAPE,
+    COUNT_PRESERVATION,
+    RATE,
+    RETURN_DENSITY,
+    BRANCH_COMPLEXITY,
+    NULLABILITY_ACCURACY,
+}

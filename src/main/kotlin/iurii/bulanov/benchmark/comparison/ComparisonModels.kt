@@ -49,6 +49,12 @@ class KindEvaluation(
         key: String,
     ): List<String> = root.mapValue(section)?.stringList(key) ?: emptyList()
 
+    /** Returns true when `<section>.<key>` exists in the parsed evaluation report. */
+    fun hasMetric(
+        section: String,
+        key: String,
+    ): Boolean = root.mapValue(section)?.containsKey(key) == true
+
     /** Size of a string-list metric at `<section>.<key>`. */
     fun listSize(
         section: String,
