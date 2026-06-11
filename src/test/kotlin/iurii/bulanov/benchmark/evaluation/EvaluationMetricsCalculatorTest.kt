@@ -224,6 +224,31 @@ class EvaluationMetricsCalculatorTest {
         assertEquals(2.0 / 3.0, metrics.nullability.nullabilityInferenceAccuracy, DOUBLE_TOLERANCE)
     }
 
+    @Test
+    fun `caps branch complexity preservation at perfect preservation`() {
+        val root = Files.createTempDirectory("evaluation-branch-cap-")
+        val javaRoot = root.resolve("checkout/src/main/java/com/example").apply { createDirectories() }
+        val kotlinRoot = root.resolve("generated/com/example").apply { createDirectories() }
+        val appJava = javaRoot.resolve("App.java")
+        val appKotlin = kotlinRoot.resolve("App.kt")
+        appJava.writeText("package com.example; public class App { public void run() { if (true) {} } }")
+        appKotlin.writeText(
+            """
+            package com.example
+            class App { fun run() { if (true) {}; if (false) {} } }
+            """.trimIndent(),
+        )
+
+        val metrics =
+            EvaluationMetricsCalculator().calculate(
+                javaFiles = listOf(discovered(appJava, root.resolve("checkout"))),
+                kotlinFiles = listOf(discovered(appKotlin, root.resolve("generated"))),
+                sourceRoots = listOf("src/main/java"),
+            )
+
+        assertEquals(1.0, metrics.content.branchComplexityIndexPreservation, DOUBLE_TOLERANCE)
+    }
+
     /**
      * Creates a temporary source fixture with matched, missing, and unexpected outputs.
      */

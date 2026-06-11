@@ -38,7 +38,7 @@ class ComparisonReportWriterTest {
         assertContains(md, "| Control-flow fidelity | 0.800 | 0.950 |")
         assertContains(md, "| Nullability inference accuracy | 0.667 | 1.000 |")
         assertContains(md, "| Status | partial | completed |")
-        assertContains(md, "| Branch complexity preservation | 0.700 | 1.200 |")
+        assertContains(md, "| Branch complexity preservation | 0.700 | 1.000 |")
         assertContains(md, "| Java function declarations | 56 | 56 |")
         assertContains(md, "| Content-shape preserved files | 14 | 17 |")
         assertContains(md, "| Return preservation ratio | 0.800 | 0.950 |")
@@ -139,7 +139,7 @@ class ComparisonReportWriterTest {
                         "content_shape_mismatch_file_count" to if (kind == ConverterKind.K2) 0 else 2,
                         "return_preservation_ratio" to if (kind == ConverterKind.K2) 0.95 else 0.8,
                         "control_flow_fidelity_score" to if (kind == ConverterKind.K2) 0.95 else 0.8,
-                        "branch_complexity_index_preservation" to if (kind == ConverterKind.K2) 1.2 else 0.7,
+                        "branch_complexity_index_preservation" to if (kind == ConverterKind.K2) 1.0 else 0.7,
                     ),
                 "nullability" to
                     mapOf(
