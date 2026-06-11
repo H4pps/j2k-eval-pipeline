@@ -153,6 +153,28 @@ class SourceTextScannerTest {
     }
 
     @Test
+    fun `classifies kotlin function bodies from PSI statements`() {
+        val kotlin =
+            SourceTextScanner().scanKotlin(
+                """
+                fun a() {}
+                fun b() { /* comment */ }
+                fun c() = 1
+                fun d(): Int { return 1 }
+                interface Api {
+                  fun e(): Int
+                }
+                """.trimIndent(),
+            )
+
+        assertEquals(setOf("c", "d"), kotlin.content.nonEmptyFunctionNames)
+        assertEquals(setOf("a", "b"), kotlin.content.emptyFunctionNames)
+        assertTrue("e" in kotlin.functionNames)
+        assertFalse("e" in kotlin.content.nonEmptyFunctionNames)
+        assertFalse("e" in kotlin.content.emptyFunctionNames)
+    }
+
+    @Test
     fun `scans kotlin quality warning categories with Kotlin PSI`() {
         val metrics =
             SourceTextScanner().scanKotlinQuality(

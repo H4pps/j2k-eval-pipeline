@@ -8,6 +8,7 @@ import org.jetbrains.kotlin.com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtBinaryExpression
 import org.jetbrains.kotlin.psi.KtBinaryExpressionWithTypeRHS
+import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtClassBody
 import org.jetbrains.kotlin.psi.KtConstantExpression
@@ -227,10 +228,16 @@ internal class KotlinSourceScanner(
 
     private fun KtNamedFunction.hasNonEmptyBody(): Boolean {
         val body = bodyExpression ?: return false
-        return body.text.trim() != EMPTY_BLOCK
+        return when (body) {
+            is KtBlockExpression -> body.statements.isNotEmpty()
+            else -> true
+        }
     }
 
-    private fun KtNamedFunction.hasExplicitEmptyBody(): Boolean = bodyExpression?.text?.trim() == EMPTY_BLOCK
+    private fun KtNamedFunction.hasExplicitEmptyBody(): Boolean {
+        val body = bodyExpression ?: return false
+        return body is KtBlockExpression && body.statements.isEmpty()
+    }
 
     private fun KtElement.containingTypeName(): String? {
         var current = parent
@@ -263,7 +270,6 @@ internal class KotlinSourceScanner(
     private companion object {
         private const val ASSIGNMENT_OPERATOR = "="
         private const val CONTRADICTORY_NULLABILITY_LINE_WINDOW = 10
-        private const val EMPTY_BLOCK = "{}"
         private const val ENUM_CLASS_PREFIX = "enum class "
         private const val INTERFACE_PREFIX = "interface "
         private const val NON_NULL_CAST_OPERATOR = "as"
