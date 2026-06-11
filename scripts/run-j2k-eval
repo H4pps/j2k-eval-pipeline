@@ -3,6 +3,7 @@ set -euo pipefail
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly DEFAULT_BENCHMARKS=("hikaricp" "spring-petclinic" "j2k-edge-cases")
+readonly CONVERTER_KINDS=("k1-old-dumb" "k1-old-smart" "k1-new" "k2")
 
 usage() {
   printf '%s\n' \
@@ -12,10 +13,19 @@ usage() {
     "  ./scripts/run-j2k-eval j2k-edge-cases [--checkout-only]" \
     "  ./scripts/run-j2k-eval all [--checkout-only]" \
     "  ./scripts/run-j2k-eval benchmarks/<name>.yml [--checkout-only]" \
+    "  ./scripts/run-j2k-eval hikaricp --kind k2" \
+    "  ./scripts/run-j2k-eval hikaricp --parallel" \
     "  ./scripts/run-j2k-eval hikaricp --zip-output build/local-artifacts/hikaricp.zip" \
     "" \
+    "Options:" \
+    "  --kind <kind>        Run only one converter kind: k1-old-dumb, k1-old-smart, k1-new, or k2." \
+    "                       Without --kind, all kinds run and comparison.* is generated." \
+    "  --parallel           Run all converter kinds for a benchmark concurrently, then compare." \
+    "  --checkout-only      Checkout benchmark inputs and skip conversion/evaluation." \
+    "  --zip-output <path>  Package reports, logs, and generated Kotlin into a zip." \
+    "" \
     "This runs the same local pipeline steps as GitHub Actions:" \
-    "  checkout -> convert -> evaluate"
+    "  checkout -> convert/evaluate each converter kind -> compare"
 }
 
 # Resolves a short benchmark alias to the matching checked-in YAML config.
@@ -40,6 +50,22 @@ benchmark_id_from_config() {
   basename "$1" .yml
 }
 
+# Returns success when the argument is a known converter kind.
+validate_kind() {
+  local requested_kind="$1"
+  local kind
+
+  for kind in "${CONVERTER_KINDS[@]}"; do
+    if [[ "${requested_kind}" == "${kind}" ]]; then
+      return 0
+    fi
+  done
+
+  echo "Unknown converter kind: ${requested_kind}" >&2
+  echo "Expected one of: ${CONVERTER_KINDS[*]}" >&2
+  exit 1
+}
+
 # Runs Gradle with common local settings. The cache redirector is disabled here
 # because local Docker DNS is less reliable than direct JetBrains repository URLs.
 run_gradle() {
@@ -58,17 +84,26 @@ add_existing_path() {
 # Writes a compact artifact containing only reports, logs, and generated Kotlin.
 package_outputs() {
   local zip_output="$1"
+  local selected_kind="$2"
+  shift
   shift
 
-  package_paths=()
+  local -a package_paths=()
   local benchmark_id
+  local kind
 
   for benchmark_id in "$@"; do
     add_existing_path "build/benchmarks/${benchmark_id}/checkout.json"
-    add_existing_path "build/j2k/${benchmark_id}/conversion.json"
-    add_existing_path "build/j2k/${benchmark_id}/logs"
-    add_existing_path "build/j2k/${benchmark_id}/generated-kotlin"
-    add_existing_path "build/reports/j2k-eval/${benchmark_id}"
+
+    if [[ -n "${selected_kind}" ]]; then
+      add_existing_path "build/j2k/${benchmark_id}/${selected_kind}"
+      add_existing_path "build/reports/j2k-eval/${benchmark_id}/${selected_kind}"
+    else
+      for kind in "${CONVERTER_KINDS[@]}"; do
+        add_existing_path "build/j2k/${benchmark_id}/${kind}"
+      done
+      add_existing_path "build/reports/j2k-eval/${benchmark_id}"
+    fi
   done
 
   if [[ "${#package_paths[@]}" -eq 0 ]]; then
@@ -82,11 +117,103 @@ package_outputs() {
   echo "==> Wrote ${zip_output}"
 }
 
+# Reads the conversion status from the JSON report without requiring jq locally.
+conversion_status() {
+  local report="$1"
+
+  sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${report}" | head -1
+}
+
+# Mirrors the CI failure gate: partial conversion remains evaluation data, but a
+# fully failed converter run aborts the local pipeline.
+fail_on_converter_failure() {
+  local benchmark_id="$1"
+  local kind="$2"
+  local report="build/j2k/${benchmark_id}/${kind}/conversion.json"
+  local status
+
+  if [[ ! -f "${report}" ]]; then
+    echo "Missing conversion report: ${report}" >&2
+    exit 1
+  fi
+
+  status="$(conversion_status "${report}")"
+  echo "==> Conversion status for ${benchmark_id} (${kind}): ${status}"
+
+  if [[ "${status}" == "failed" ]]; then
+    echo "J2K conversion for ${benchmark_id} (${kind}) failed entirely; see ${report}" >&2
+    exit 1
+  fi
+}
+
+# Executes conversion and evaluation for one converter kind.
+run_kind() {
+  local config="$1"
+  local benchmark_id="$2"
+  local kind="$3"
+  local isolate_runtime="$4"
+  local -a gradle_args=(--stacktrace convert -PbenchmarkConfig="${config}" -Pkind="${kind}")
+
+  echo "==> Running static J2K for ${config} (${kind})"
+  mkdir -p "build/j2k/${benchmark_id}/${kind}/logs"
+
+  if [[ "${isolate_runtime}" == "1" ]]; then
+    gradle_args+=(
+      "-PstagingDir=build/j2k/${benchmark_id}/${kind}/staging-source"
+      "-PideaRuntimeDir=build/j2k/${benchmark_id}/${kind}/idea-runtime"
+    )
+  fi
+
+  run_gradle "${gradle_args[@]}" 2>&1 \
+    | tee "build/j2k/${benchmark_id}/${kind}/logs/gradle-convert.log"
+
+  echo "==> Evaluating generated Kotlin for ${config} (${kind})"
+  run_gradle run --args="evaluate --config ${config} --kind ${kind}"
+
+  fail_on_converter_failure "${benchmark_id}" "${kind}"
+}
+
+# Executes all converter kinds concurrently, then returns failure if any kind failed.
+run_kinds_parallel() {
+  local config="$1"
+  local benchmark_id="$2"
+  local -a pids=()
+  local -a kinds=()
+  local kind
+  local index
+  local failed=0
+
+  echo "==> Running converter kinds in parallel for ${config}"
+  for kind in "${CONVERTER_KINDS[@]}"; do
+    (
+      run_kind "${config}" "${benchmark_id}" "${kind}" "1"
+    ) &
+    pids+=("$!")
+    kinds+=("${kind}")
+  done
+
+  for index in "${!pids[@]}"; do
+    if wait "${pids[$index]}"; then
+      echo "==> Completed ${config} (${kinds[$index]})"
+    else
+      echo "==> Failed ${config} (${kinds[$index]})" >&2
+      failed=1
+    fi
+  done
+
+  if [[ "${failed}" != "0" ]]; then
+    exit 1
+  fi
+}
+
 # Executes the checkout, conversion, and evaluation steps for one benchmark.
 run_benchmark() {
   local config="$1"
   local checkout_only="$2"
+  local selected_kind="$3"
+  local parallel="$4"
   local benchmark_id
+  local kind
 
   benchmark_id="$(benchmark_id_from_config "${config}")"
 
@@ -98,13 +225,20 @@ run_benchmark() {
     return
   fi
 
-  echo "==> Running static J2K for ${config}"
-  mkdir -p "build/j2k/${benchmark_id}/logs"
-  run_gradle --stacktrace convert -PbenchmarkConfig="${config}" 2>&1 \
-    | tee "build/j2k/${benchmark_id}/logs/gradle-convert.log"
+  if [[ -n "${selected_kind}" ]]; then
+    run_kind "${config}" "${benchmark_id}" "${selected_kind}" "0"
+    echo "==> Single-kind mode enabled; skipping comparison for ${config}"
+    return
+  elif [[ "${parallel}" == "1" ]]; then
+    run_kinds_parallel "${config}" "${benchmark_id}"
+  else
+    for kind in "${CONVERTER_KINDS[@]}"; do
+      run_kind "${config}" "${benchmark_id}" "${kind}" "0"
+    done
+  fi
 
-  echo "==> Evaluating generated Kotlin for ${config}"
-  run_gradle run --args="evaluate --config ${config}"
+  echo "==> Comparing converter kinds for ${config}"
+  run_gradle run --args="compare --config ${config}"
 }
 
 main() {
@@ -117,10 +251,22 @@ main() {
   shift
 
   local checkout_only=0
+  local parallel=0
+  local selected_kind=""
   local zip_output=""
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
       --checkout-only) checkout_only=1 ;;
+      --parallel) parallel=1 ;;
+      --kind)
+        if [[ "${2:-}" == "" ]]; then
+          echo "Missing value for --kind" >&2
+          usage >&2
+          exit 1
+        fi
+        selected_kind="$2"
+        shift
+        ;;
       --zip-output)
         if [[ "${2:-}" == "" ]]; then
           echo "Missing value for --zip-output" >&2
@@ -141,11 +287,15 @@ main() {
 
   cd "${REPO_ROOT}"
 
+  if [[ -n "${selected_kind}" ]]; then
+    validate_kind "${selected_kind}"
+  fi
+
   local completed_benchmarks=()
   if [[ "${target}" == "all" ]]; then
     local benchmark
     for benchmark in "${DEFAULT_BENCHMARKS[@]}"; do
-      run_benchmark "$(benchmark_config "${benchmark}")" "${checkout_only}"
+      run_benchmark "$(benchmark_config "${benchmark}")" "${checkout_only}" "${selected_kind}" "${parallel}"
       completed_benchmarks+=("${benchmark}")
     done
   else
@@ -154,12 +304,12 @@ main() {
 
     config="$(benchmark_config "${target}")"
     benchmark_id="$(benchmark_id_from_config "${config}")"
-    run_benchmark "${config}" "${checkout_only}"
+    run_benchmark "${config}" "${checkout_only}" "${selected_kind}" "${parallel}"
     completed_benchmarks+=("${benchmark_id}")
   fi
 
   if [[ -n "${zip_output}" ]]; then
-    package_outputs "${zip_output}" "${completed_benchmarks[@]}"
+    package_outputs "${zip_output}" "${selected_kind}" "${completed_benchmarks[@]}"
   fi
 }
 

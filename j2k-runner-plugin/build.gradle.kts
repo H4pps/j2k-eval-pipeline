@@ -64,6 +64,7 @@ tasks.named<JavaExec>("runIde") {
     val conversionReport = providers.gradleProperty("conversionReport")
     val logsDir = providers.gradleProperty("logsDir")
     val indexingTimeoutMs = providers.gradleProperty("indexingTimeoutMs")
+    val ideaRuntimeDir = providers.gradleProperty("ideaRuntimeDir")
 
     // The Kotlin plugin mode is JVM-global and chosen at IDE startup: K2 converter needs it on,
     // K1 converters (old/new) need it off.
@@ -75,6 +76,12 @@ tasks.named<JavaExec>("runIde") {
                 add("-Didea.kotlin.plugin.use.k2=$useK2")
                 add("-DbytecodeAnalysis.index.enabled=false")
                 indexingTimeoutMs.orNull?.let { add("-Dj2k.indexing.timeoutMs=$it") }
+                ideaRuntimeDir.orNull?.let {
+                    val runtimeDir = rootProject.file(it)
+                    add("-Didea.config.path=${runtimeDir.resolve("config").path}")
+                    add("-Didea.system.path=${runtimeDir.resolve("system").path}")
+                    add("-Didea.log.path=${runtimeDir.resolve("log").path}")
+                }
             }
         },
     )
