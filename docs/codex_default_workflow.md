@@ -7,9 +7,11 @@ every agent manually:
 Use the default workflow for this repository.
 
 Plan with the main gpt-5.5 thread first. Use fast_explorer or deep_explorer only
-for bounded read-only investigation when it helps. Use code_writer for focused
-implementation with clear file ownership. Use fast_verifier for assigned Gradle
-tests, builds, lint, formatting, and report-generation checks. Finish by
+for bounded read-only investigation when it helps. Use file_inspector for focused
+read-only inspection of generated artifacts, converted Kotlin, benchmark
+checkouts, conversion metadata, and evaluation reports. Use code_writer for
+focused implementation with clear file ownership. Use fast_verifier for assigned
+Gradle tests, builds, lint, formatting, and report-generation checks. Finish by
 reviewing the diff against AGENTS.md, docs/code_review.md, and the assignment
 requirements.
 
@@ -28,5 +30,7 @@ Notes:
 - The main thread remains responsible for planning and final judgment.
 - Subagents should be used only for bounded work that benefits from separation
   or parallelism.
+- Use `file_inspector` instead of a writer agent when the task is to inspect
+  artifacts, converted code, reports, or benchmark files without edits.
 - Avoid multiple agents editing the same files in parallel.
 - For small one-file changes, the main thread can implement directly.
