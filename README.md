@@ -69,19 +69,62 @@ The evaluator reports:
 The exact metric formulas and JSON keys are documented in
 [docs/evaluation-metrics.md](docs/evaluation-metrics.md).
 
-The current result summary is in [docs/SUMMARY.md](docs/summary.md).
+The current result summary is in [docs/summary.md](docs/summary.md).
 
 ## GitHub Actions Artifacts
 
-The workflow uploads per-kind outputs and benchmark comparison reports:
+The workflow uploads two artifact families.
+
+Per-kind artifacts are produced by each `(benchmark, converter kind)` job:
 
 ```text
 eval-<benchmark>-<kind>
+```
+
+Example:
+
+```text
+eval-hikaricp-k1-new
+eval-j2k-edge-cases-k2
+```
+
+Each per-kind artifact preserves the `build/` subtrees for that run:
+
+```text
+build/j2k/<benchmark>/<kind>/conversion.json
+build/j2k/<benchmark>/<kind>/generated-kotlin/
+build/j2k/<benchmark>/<kind>/logs/
+build/reports/j2k-eval/<benchmark>/<kind>/evaluation.json
+build/reports/j2k-eval/<benchmark>/<kind>/summary.md
+```
+
+Use these artifacts when inspecting one converter kind's generated Kotlin,
+converter logs, raw conversion metadata, or evaluator report.
+
+Comparison artifacts are produced after all available per-kind reports for a
+benchmark are downloaded and compared:
+
+```text
 comparison-<benchmark>
 ```
 
-Artifacts contain generated Kotlin, converter logs, `conversion.json`, per-kind
-`evaluation.json`/`summary.md`, and benchmark-level `comparison.json`/`comparison.md`.
+Example:
+
+```text
+comparison-hikaricp
+comparison-j2k-edge-cases
+```
+
+Each comparison artifact contains:
+
+```text
+build/reports/j2k-eval/<benchmark>/comparison.json
+build/reports/j2k-eval/<benchmark>/comparison.md
+```
+
+Use these artifacts when comparing converter kinds side by side. Comparison
+reports are built from the per-kind `evaluation.json` files; they do not include
+generated Kotlin sources.
 
 ## Run Locally
 
@@ -163,4 +206,5 @@ The host runner writes outputs directly under `build/j2k/` and
 
 - [Evaluation summary](docs/summary.md)
 - [Evaluation metrics](docs/evaluation-metrics.md)
-- [Edge-case dataset report](docs/edge_cases.md)
+- [Edge-case dataset report](docs/edge_cases_old.md)
+- [Edge-case converter comparison](docs/edge_cases_k1_old_dumb_vs_k1_new_vs_k2.md)
