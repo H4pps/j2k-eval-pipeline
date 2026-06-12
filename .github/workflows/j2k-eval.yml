@@ -13,6 +13,7 @@ on:
       - benchmarks/hikaricp.yml
       - benchmarks/spring-petclinic.yml
       - benchmarks/j2k-edge-cases.yml
+      - benchmarks/gson.yml
       - j2k-runner-plugin/**
       - .github/workflows/j2k-eval.yml
   pull_request:
@@ -26,6 +27,7 @@ on:
       - benchmarks/hikaricp.yml
       - benchmarks/spring-petclinic.yml
       - benchmarks/j2k-edge-cases.yml
+      - benchmarks/gson.yml
       - j2k-runner-plugin/**
       - .github/workflows/j2k-eval.yml
 
@@ -39,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        benchmark: [hikaricp, spring-petclinic, j2k-edge-cases]
+        benchmark: [hikaricp, spring-petclinic, j2k-edge-cases, gson]
         kind: [k1-old-dumb, k1-old-smart, k1-new, k2]
 
     steps:
@@ -115,7 +117,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        benchmark: [hikaricp, spring-petclinic, j2k-edge-cases]
+        benchmark: [hikaricp, spring-petclinic, j2k-edge-cases, gson]
 
     steps:
       - name: Checkout harness repository

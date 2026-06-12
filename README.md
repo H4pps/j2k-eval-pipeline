@@ -5,8 +5,8 @@ This repo runs IntelliJ's static Java-to-Kotlin converter benchmark.
 The main benchmark is
 [HikariCP](https://github.com/brettwooldridge/HikariCP), checked out from
 [H4pps/HikariCP](https://github.com/H4pps/HikariCP), it was forked in case there will be new changes to the project. Spring PetClinic is used as
-a comparison benchmark, and `j2k-edge-cases` is a small custom dataset for
-converter stress tests.
+a comparison benchmark, Gson is used as a focused JSON-library benchmark, and
+`j2k-edge-cases` is a small custom dataset for converter stress tests.
 
 ## Benchmarks
 
@@ -17,6 +17,7 @@ Benchmarks are cloned during the run from pinned commits.With this approach the 
 | `benchmarks/hikaricp.yml` | primary real-world benchmark |
 | `benchmarks/spring-petclinic.yml` | comparison benchmark |
 | `benchmarks/j2k-edge-cases.yml` | custom edge-case dataset |
+| `benchmarks/gson.yml` | focused JSON-library comparison benchmark |
 
 ## Pipeline
 
@@ -86,6 +87,7 @@ Example:
 ```text
 eval-hikaricp-k1-new
 eval-j2k-edge-cases-k2
+eval-gson-k2
 ```
 
 Each per-kind artifact preserves the `build/` subtrees for that run:
@@ -113,6 +115,7 @@ Example:
 ```text
 comparison-hikaricp
 comparison-j2k-edge-cases
+comparison-gson
 ```
 
 Each comparison artifact contains:
@@ -137,6 +140,7 @@ Run one benchmark with Docker:
 ./scripts/docker-run-local hikaricp
 ./scripts/docker-run-local spring-petclinic
 ./scripts/docker-run-local j2k-edge-cases
+./scripts/docker-run-local gson
 ```
 
 Run all benchmarks:
@@ -155,6 +159,7 @@ Run the same pipeline directly on the host:
 ./scripts/run-j2k-eval hikaricp
 ./scripts/run-j2k-eval spring-petclinic
 ./scripts/run-j2k-eval j2k-edge-cases
+./scripts/run-j2k-eval gson
 ./scripts/run-j2k-eval all
 ```
 

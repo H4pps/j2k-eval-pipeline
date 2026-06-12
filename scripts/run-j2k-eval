@@ -2,7 +2,7 @@
 set -euo pipefail
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly DEFAULT_BENCHMARKS=("hikaricp" "spring-petclinic" "j2k-edge-cases")
+readonly DEFAULT_BENCHMARKS=("hikaricp" "spring-petclinic" "j2k-edge-cases" "gson")
 readonly CONVERTER_KINDS=("k1-old-dumb" "k1-old-smart" "k1-new" "k2")
 
 usage() {
@@ -11,6 +11,7 @@ usage() {
     "  ./scripts/run-j2k-eval hikaricp [--checkout-only]" \
     "  ./scripts/run-j2k-eval spring-petclinic [--checkout-only]" \
     "  ./scripts/run-j2k-eval j2k-edge-cases [--checkout-only]" \
+    "  ./scripts/run-j2k-eval gson [--checkout-only]" \
     "  ./scripts/run-j2k-eval all [--checkout-only]" \
     "  ./scripts/run-j2k-eval benchmarks/<name>.yml [--checkout-only]" \
     "  ./scripts/run-j2k-eval hikaricp --kind k2" \
@@ -34,6 +35,7 @@ benchmark_config() {
     hikaricp) printf '%s\n' "benchmarks/hikaricp.yml" ;;
     spring-petclinic) printf '%s\n' "benchmarks/spring-petclinic.yml" ;;
     j2k-edge-cases) printf '%s\n' "benchmarks/j2k-edge-cases.yml" ;;
+    gson) printf '%s\n' "benchmarks/gson.yml" ;;
     *)
       if [[ -f "$1" ]]; then
         printf '%s\n' "$1"

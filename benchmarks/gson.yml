@@ -1,0 +1,23 @@
+id: gson
+name: Gson
+role: comparison
+description: Google Gson JSON library benchmark focused on reflection, generics, adapters, and null handling.
+
+repository:
+  upstream: https://github.com/google/gson
+  source: https://github.com/H4pps/gson
+  ref: 004e7a4949e08b430e3c8996998ee5a17ff9423a
+  branch: main
+
+checkout:
+  directory: build/benchmarks/gson/source
+
+java:
+  sourceRoots:
+    - gson/src/main/java
+
+build:
+  tool: maven
+  workingDirectory: .
+  commands:
+    - mvn -q -pl gson -DskipTests package

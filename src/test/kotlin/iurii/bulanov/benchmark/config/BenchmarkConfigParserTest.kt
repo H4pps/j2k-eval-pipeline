@@ -37,6 +37,19 @@ class BenchmarkConfigParserTest {
     }
 
     @Test
+    fun `parses gson config`() {
+        val config = BenchmarkConfigParser().parse(Path.of("benchmarks/gson.yml"))
+
+        assertEquals("gson", config.id)
+        assertEquals("Gson", config.name)
+        assertEquals("comparison", config.role)
+        assertEquals("https://github.com/H4pps/gson", config.repository.source)
+        assertEquals("build/benchmarks/gson/source", config.checkout.directory)
+        assertEquals(listOf("gson/src/main/java"), config.java.sourceRoots)
+        assertEquals(listOf("mvn -q -pl gson -DskipTests package"), config.build.commands)
+    }
+
+    @Test
     fun `missing required field fails clearly`() {
         val configPath =
             writeTempConfig(

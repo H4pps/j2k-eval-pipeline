@@ -31,6 +31,7 @@ getter/setter calls.
 | HikariCP | Primary real-world benchmark | [H4pps/HikariCP](https://github.com/H4pps/HikariCP) |
 | Spring PetClinic | Calibration benchmark | [H4pps/spring-petclinic](https://github.com/H4pps/spring-petclinic) |
 | J2K Edge Cases | Custom stress dataset | [H4pps/j2k-edge-cases](https://github.com/H4pps/j2k-edge-cases), documented in [edge_cases_old.md](edge_cases_old.md) with a three-way converter comparison in [edge_cases_k1_old_dumb_vs_k1_new_vs_k2.md](edge_cases_k1_old_dumb_vs_k1_new_vs_k2.md) |
+| Gson | Focused JSON-library benchmark | [H4pps/gson](https://github.com/H4pps/gson), forked from [google/gson](https://github.com/google/gson) |
 
 ## Result Snapshot
 

@@ -13,6 +13,7 @@ usage() {
     "  ./scripts/docker-run-local hikaricp [--checkout-only]" \
     "  ./scripts/docker-run-local spring-petclinic [--checkout-only]" \
     "  ./scripts/docker-run-local j2k-edge-cases [--checkout-only]" \
+    "  ./scripts/docker-run-local gson [--checkout-only]" \
     "  ./scripts/docker-run-local all [--checkout-only]" \
     "  ./scripts/docker-run-local benchmarks/<name>.yml [--checkout-only]" \
     "  ./scripts/docker-run-local hikaricp --kind k2" \
