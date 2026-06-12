@@ -18,6 +18,11 @@ After conversion, the Kotlin evaluator compares the original Java files with
 the generated Kotlin files. It checks whether files are missing, whether package
 and declaration structure was preserved, whether Java methods still have Kotlin
 bodies, and whether nullability or Kotlin-quality warnings should be reviewed.
+It also reports core preservation scores for control-flow fidelity, content
+shape preservation, return density, branch complexity, and nullability
+consistency so structural conversion quality can be read separately from
+post-processing dirtiness such as fully qualified references or leftover
+getter/setter calls.
 
 ## Benchmark Inputs
 
@@ -25,7 +30,7 @@ bodies, and whether nullability or Kotlin-quality warnings should be reviewed.
 | --- | --- | --- |
 | HikariCP | Primary real-world benchmark | [H4pps/HikariCP](https://github.com/H4pps/HikariCP) |
 | Spring PetClinic | Calibration benchmark | [H4pps/spring-petclinic](https://github.com/H4pps/spring-petclinic) |
-| J2K Edge Cases | Custom stress dataset | [H4pps/j2k-edge-cases](https://github.com/H4pps/j2k-edge-cases), documented in [edge_cases.md](edge_cases.md) |
+| J2K Edge Cases | Custom stress dataset | [H4pps/j2k-edge-cases](https://github.com/H4pps/j2k-edge-cases), documented in [edge_cases_old.md](edge_cases_old.md) with a three-way converter comparison in [edge_cases_k1_old_dumb_vs_k1_new_vs_k2.md](edge_cases_k1_old_dumb_vs_k1_new_vs_k2.md) |
 
 ## Result Snapshot
 
@@ -94,7 +99,19 @@ The custom dataset converted completely:
 - One file had content-shape mismatch warnings.
 - One not-null Java declaration became nullable Kotlin.
 - Manual review found 6 passed cases, 1 review-only case, and 10 failed cases.
+- The current three-way edge-case comparison marks manual review outcomes as:
+  `k1-old-dumb` 3 passed / 14 failed, `k1-new` 12 passed / 5 failed, and
+  `k2` 9 passed / 8 failed.
 
 Interpretation: the dataset is useful for focused converter review. It gives
 small, inspectable examples for raw/unchecked casts, switch and pattern matching
 structure, annotation-heavy code, and nullability preservation.
+
+## Further Reading
+
+For detailed analysis of converter differences:
+
+- [Evaluation Metrics](evaluation-metrics.md) - Exact evaluator formulas, counts, and JSON keys
+- [Edge-case K1-old-dumb vs K1-new vs K2 Comparison](edge_cases_k1_old_dumb_vs_k1_new_vs_k2.md) - Side-by-side manual review of all edge-case outputs
+- [K2 vs K1-new Analysis](k2-vs-k1-new-analysis.md) - Comprehensive comparison of converter outputs
+- [K2 Import Insertion Errors](k2-import-insertion-error.md) - Documentation of K2's post-processing import errors

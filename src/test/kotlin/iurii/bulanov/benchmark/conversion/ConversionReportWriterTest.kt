@@ -16,6 +16,7 @@ class ConversionReportWriterTest {
         val report =
             ConversionReport(
                 config = testConfig(),
+                kind = ConverterKind.K1_NEW,
                 status = ConversionStatus.PARTIAL,
                 sourceJavaFileCount = 2,
                 generatedKotlinFileCount = 1,
@@ -34,6 +35,7 @@ class ConversionReportWriterTest {
         val json = ConversionReportWriter().renderJson(report)
 
         assertContains(json, "\"id\":\"sample\"")
+        assertContains(json, "\"kind\":\"k1-new\"")
         assertContains(json, "\"status\":\"partial\"")
         assertContains(json, "\"source_java_file_count\":2")
         assertContains(json, "\"generated_kotlin_file_count\":1")

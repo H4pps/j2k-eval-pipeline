@@ -5,6 +5,7 @@ import iurii.bulanov.benchmark.config.BuildConfig
 import iurii.bulanov.benchmark.config.CheckoutConfig
 import iurii.bulanov.benchmark.config.JavaConfig
 import iurii.bulanov.benchmark.config.RepositoryConfig
+import iurii.bulanov.benchmark.conversion.ConverterKind
 import iurii.bulanov.logging.StructuredLogger
 import iurii.bulanov.source.DiscoveredSourceFile
 import java.nio.file.Files
@@ -18,6 +19,7 @@ import kotlin.test.assertTrue
 
 class EvaluationReportWriterTest {
     @Test
+    @Suppress("LongMethod")
     fun `writes assignment aligned json and markdown for partial conversions`() {
         val reportDirectory = Files.createTempDirectory("evaluation-report-")
 
@@ -29,6 +31,7 @@ class EvaluationReportWriterTest {
         assertTrue(summaryPath.exists())
         val json = jsonPath.readText()
         assertContains(json, "\"id\":\"sample\"")
+        assertContains(json, "\"kind\":\"k1-old-dumb\"")
         assertContains(json, "\"java_file_count\":1")
         assertContains(json, "\"kotlin_file_count\":0")
         assertContains(json, "\"conversion\"")
@@ -36,6 +39,14 @@ class EvaluationReportWriterTest {
         assertContains(json, "\"quality\"")
         assertContains(json, "\"content\"")
         assertContains(json, "\"nullability\"")
+        assertContains(json, "\"control_flow_fidelity_score\":0.4")
+        assertContains(json, "\"java_function_declaration_count\":1")
+        assertContains(json, "\"content_shape_preserved_file_count\":1")
+        assertContains(json, "\"return_preservation_ratio\":0.0")
+        assertContains(json, "\"null_comparison_count\":1")
+        assertContains(json, "\"nullability_cast_count\":1")
+        assertContains(json, "\"safe_call_count\":0")
+        assertContains(json, "\"nullability_inference_accuracy\":0.5")
         assertContains(json, "\"analysis\"")
         assertContains(json, "\"analysis_method\":\"structural_heuristics\"")
         assertContains(json, "\"missing_output_count\":1")
@@ -48,10 +59,15 @@ class EvaluationReportWriterTest {
         val summary = summaryPath.readText()
         assertFalse(summary.contains("## Benchmark"))
         assertFalse(summary.contains("## Assignment Fit"))
-        assertContains(summary, "## Result Interpretation")
-        assertContains(summary, "## Conversion Execution")
+        assertContains(summary, "## Summary")
+        assertContains(summary, "## Conversion Coverage")
+        assertFalse(summary.contains("## Result Interpretation"))
+        assertFalse(summary.contains("## Conversion Execution"))
+        assertFalse(summary.contains("## File Coverage"))
         assertContains(summary, "## Kotlin Quality Warnings")
         assertContains(summary, "Static J2K produced a partial conversion")
+        assertContains(summary, "Converter status: `completed_with_warnings`")
+        assertContains(summary, "Converter issues: `1` warnings, `0` errors.")
         assertContains(summary, "Java files discovered: `1`")
         assertContains(summary, "Generated Kotlin is compared with the original Java source")
         assertContains(summary, "Java API names missing in Kotlin: `2`")
@@ -69,8 +85,29 @@ class EvaluationReportWriterTest {
         assertContains(summary, "Kotlin functions not present as Java methods")
         assertContains(summary, "## Content Preservation")
         assertContains(summary, "Missing Kotlin bodies: `1`")
+        assertContains(summary, "Function declarations: Java `1`, Kotlin `1`")
+        assertContains(summary, "Content shape preserved files: 1/1 (100.0%)")
+        assertContains(summary, "Returns preserved: 0/1 (0.0%)")
+        assertContains(summary, "Branches preserved: 1/0 (100.0%, capped)")
+        assertContains(summary, "Throws preserved: 0/0 (100.0%)")
+        assertContains(summary, "Try blocks preserved: 0/0 (100.0%)")
+        assertContains(summary, "Control-flow fidelity score: returns 0/1, branches 1/0, throws 0/0, tries 0/0 (40.0%)")
+        assertContains(summary, "Java return rate: 1/1 = 1.000")
+        assertContains(summary, "Kotlin return rate: 0/1 = 0.000")
+        assertContains(
+            summary,
+            "Return rate preserved: 0.000/1.000 (0.0%)",
+        )
+        assertContains(summary, "Java control-flow rate: 1/1 = 1.000")
+        assertContains(summary, "Kotlin control-flow rate: 3/1 = 3.000")
+        assertContains(
+            summary,
+            "Control-flow rate preserved: 3.000/1.000 (100.0%, capped)",
+        )
         assertContains(summary, "`App.kt#run`")
         assertContains(summary, "## Nullability Signals")
+        assertContains(summary, "Total nullability operations: `2` (null comparisons `1`, casts `1`, safe calls `0`)")
+        assertContains(summary, "Nullability inference accuracy: 1/2 (50.0%)")
         assertContains(summary, "Nullable annotations not preserved: `1`")
         assertContains(summary, "`App.kt#name`")
         assertContains(summary, "Missing generated Kotlin files: `1`")
@@ -86,7 +123,8 @@ class EvaluationReportWriterTest {
 
         val summary = reportDirectory.resolve("summary.md").readText()
         assertContains(summary, "Static J2K generated Kotlin for every configured Java input")
-        assertContains(summary, "Coverage: `1` of `1` configured Java inputs")
+        assertContains(summary, "Coverage: `1` of `1` Java inputs")
+        assertContains(summary, "## Conversion Coverage")
         assertContains(summary, "## Content Preservation")
         assertContains(summary, "## Nullability Signals")
         assertContains(summary, "## Notable Failures")
@@ -100,8 +138,9 @@ class EvaluationReportWriterTest {
     private fun sampleResult(reportDirectory: Path): EvaluationResult =
         EvaluationResult(
             config = testConfig("sample"),
+            kind = ConverterKind.K1_OLD_DUMB,
             checkoutDirectory = Path.of("build/benchmarks/sample/source"),
-            generatedKotlinDirectory = Path.of("build/j2k/sample/generated-kotlin"),
+            generatedKotlinDirectory = Path.of("build/j2k/sample/k1-old-dumb/generated-kotlin"),
             reportDirectory = reportDirectory,
             conversionReportPath = Path.of("build/j2k/sample/conversion.json"),
             checkoutReportPath = Path.of("build/benchmarks/sample/checkout.json"),
@@ -124,8 +163,9 @@ class EvaluationReportWriterTest {
     private fun completeResult(reportDirectory: Path): EvaluationResult =
         EvaluationResult(
             config = testConfig("complete"),
+            kind = ConverterKind.K1_OLD_SMART,
             checkoutDirectory = Path.of("build/benchmarks/complete/source"),
-            generatedKotlinDirectory = Path.of("build/j2k/complete/generated-kotlin"),
+            generatedKotlinDirectory = Path.of("build/j2k/complete/k1-old-smart/generated-kotlin"),
             reportDirectory = reportDirectory,
             conversionReportPath = Path.of("build/j2k/complete/conversion.json"),
             checkoutReportPath = Path.of("build/benchmarks/complete/checkout.json"),
@@ -289,13 +329,29 @@ class EvaluationReportWriterTest {
             javaReturnCount = 1,
             kotlinReturnCount = 0,
             javaBranchCount = 0,
-            kotlinBranchCount = 0,
-            javaLoopCount = 0,
-            kotlinLoopCount = 0,
+            kotlinBranchCount = 1,
+            javaLoopCount = 1,
+            kotlinLoopCount = 2,
             javaThrowCount = 0,
             kotlinThrowCount = 0,
             javaTryCount = 0,
             kotlinTryCount = 0,
+            javaFunctionDeclarationCount = 1,
+            kotlinFunctionDeclarationCount = 1,
+            contentShapePreservedFileCount = 1,
+            contentShapeMismatchFileCount = 0,
+            returnPreservationRatio = 0.0,
+            branchPreservationRatio = 1.0,
+            throwPreservationRatio = 1.0,
+            tryPreservationRatio = 1.0,
+            controlFlowFidelityScore = 0.4,
+            contentShapePreservationRate = 1.0,
+            javaReturnDensity = 1.0,
+            kotlinReturnDensity = 0.0,
+            returnStatementDensityPreservation = 0.0,
+            javaBranchComplexityIndex = 1.0,
+            kotlinBranchComplexityIndex = 2.0,
+            branchComplexityIndexPreservation = 1.0,
             findings =
                 listOf(
                     EvaluationWarning(
@@ -315,6 +371,12 @@ class EvaluationReportWriterTest {
             javaNullableAnnotationCount = 1,
             javaNotNullAnnotationCount = 0,
             kotlinNullableTypeCount = 0,
+            contradictoryNullabilityPatterns = 1,
+            nullComparisonCount = 1,
+            nullabilityCastCount = 1,
+            safeCallCount = 0,
+            totalNullabilityOperationCount = 2,
+            nullabilityInferenceAccuracy = 0.5,
             nullableAnnotationsNotPreserved = listOf("App.kt#name"),
             notNullAnnotationsBecameNullable = emptyList(),
             findings =
@@ -350,6 +412,22 @@ class EvaluationReportWriterTest {
             kotlinThrowCount = 0,
             javaTryCount = 0,
             kotlinTryCount = 0,
+            javaFunctionDeclarationCount = 1,
+            kotlinFunctionDeclarationCount = 1,
+            contentShapePreservedFileCount = 1,
+            contentShapeMismatchFileCount = 0,
+            returnPreservationRatio = 1.0,
+            branchPreservationRatio = 1.0,
+            throwPreservationRatio = 1.0,
+            tryPreservationRatio = 1.0,
+            controlFlowFidelityScore = 1.0,
+            contentShapePreservationRate = 1.0,
+            javaReturnDensity = 1.0,
+            kotlinReturnDensity = 1.0,
+            returnStatementDensityPreservation = 1.0,
+            javaBranchComplexityIndex = 0.0,
+            kotlinBranchComplexityIndex = 0.0,
+            branchComplexityIndexPreservation = 1.0,
             findings = emptyList(),
         )
 
@@ -361,6 +439,12 @@ class EvaluationReportWriterTest {
             javaNullableAnnotationCount = 0,
             javaNotNullAnnotationCount = 0,
             kotlinNullableTypeCount = 0,
+            contradictoryNullabilityPatterns = 0,
+            nullComparisonCount = 0,
+            nullabilityCastCount = 0,
+            safeCallCount = 0,
+            totalNullabilityOperationCount = 0,
+            nullabilityInferenceAccuracy = 1.0,
             nullableAnnotationsNotPreserved = emptyList(),
             notNullAnnotationsBecameNullable = emptyList(),
             findings = emptyList(),

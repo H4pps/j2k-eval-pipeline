@@ -10,22 +10,28 @@ class ConversionPathResolver(
     private val outputRoot: Path = Path.of("build", "j2k"),
 ) {
     /**
-     * Resolves default conversion paths and applies optional CLI/Gradle overrides.
+     * Resolves default conversion paths for [kind] and applies optional CLI/Gradle overrides.
+     *
+     * Each converter kind writes to its own `<id>/<kind>/...` subtree so the kinds do not
+     * overwrite each other; the staging source tree stays shared per benchmark because it is
+     * read-only converter input identical for every kind.
      */
     fun resolve(
         config: BenchmarkConfig,
+        kind: ConverterKind,
         overrides: ConversionPathOverrides = ConversionPathOverrides(null, null, null, null),
     ): ConversionPaths {
         val benchmarkRoot = outputRoot.resolve(config.id)
+        val kindRoot = benchmarkRoot.resolve(kind.id)
         val stagingDirectory =
             safeBuildPath(
                 overrides.stagingDirectory ?: benchmarkRoot.resolve("staging-source-${config.repository.ref.toPathToken()}"),
                 "stagingDir",
             )
         val generatedKotlinDirectory =
-            safeBuildPath(overrides.generatedKotlinDirectory ?: benchmarkRoot.resolve("generated-kotlin"), "generatedKotlinDir")
-        val conversionReport = safeBuildPath(overrides.conversionReport ?: benchmarkRoot.resolve("conversion.json"), "conversionReport")
-        val logsDirectory = safeBuildPath(overrides.logsDirectory ?: benchmarkRoot.resolve("logs"), "logsDir")
+            safeBuildPath(overrides.generatedKotlinDirectory ?: kindRoot.resolve("generated-kotlin"), "generatedKotlinDir")
+        val conversionReport = safeBuildPath(overrides.conversionReport ?: kindRoot.resolve("conversion.json"), "conversionReport")
+        val logsDirectory = safeBuildPath(overrides.logsDirectory ?: kindRoot.resolve("logs"), "logsDir")
 
         return ConversionPaths(
             stagingDirectory = stagingDirectory,

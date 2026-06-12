@@ -1,6 +1,6 @@
 name = "fast_explorer"
 description = "Fast read-only explorer for locating files, tracing project structure, and summarizing evidence."
-model = "gpt-5.3-codex-spark"
+model = "gpt-5.5"
 model_reasoning_effort = "low"
 sandbox_mode = "read-only"
 developer_instructions = """

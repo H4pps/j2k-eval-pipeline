@@ -110,6 +110,7 @@ class SourceTextScannerTest {
         assertFalse("fake" in kotlin.functionNames)
         assertTrue("run" in kotlin.content.nonEmptyFunctionNames)
         assertTrue("empty" in kotlin.content.emptyFunctionNames)
+        assertEquals(2, kotlin.content.functionDeclarationCount)
         assertEquals(2, kotlin.content.returnCount)
         assertEquals(1, kotlin.content.branchCount)
         assertEquals(1, kotlin.content.loopCount)
@@ -118,6 +119,59 @@ class SourceTextScannerTest {
         assertTrue("nullableName" in kotlin.nullability.nullableTypeNames)
         assertTrue("input" in kotlin.nullability.nullableTypeNames)
         assertTrue("run" in kotlin.nullability.nullableTypeNames)
+        assertEquals(0, kotlin.nullability.contradictoryNullabilityPatternCount)
+        assertEquals(1, kotlin.nullability.nullComparisonCount)
+        assertEquals(0, kotlin.nullability.nullabilityCastCount)
+        assertEquals(0, kotlin.nullability.safeCallCount)
+        assertEquals(1, kotlin.nullability.totalNullabilityOperationCount)
+    }
+
+    @Test
+    fun `scans kotlin nullability operation and contradiction counts`() {
+        val kotlin =
+            SourceTextScanner().scanKotlin(
+                """
+                package com.example
+                class App {
+                  fun lookup(source: Any?): String? {
+                    val first = source as String
+                    if (first == null) return null
+                    var second = source as String
+                    if (second != null) second = second.trim()
+                    val third = source as String?
+                    return third?.trim()
+                  }
+                }
+                """.trimIndent(),
+            )
+
+        assertEquals(2, kotlin.nullability.contradictoryNullabilityPatternCount)
+        assertEquals(2, kotlin.nullability.nullComparisonCount)
+        assertEquals(3, kotlin.nullability.nullabilityCastCount)
+        assertEquals(1, kotlin.nullability.safeCallCount)
+        assertEquals(6, kotlin.nullability.totalNullabilityOperationCount)
+    }
+
+    @Test
+    fun `classifies kotlin function bodies from PSI statements`() {
+        val kotlin =
+            SourceTextScanner().scanKotlin(
+                """
+                fun a() {}
+                fun b() { /* comment */ }
+                fun c() = 1
+                fun d(): Int { return 1 }
+                interface Api {
+                  fun e(): Int
+                }
+                """.trimIndent(),
+            )
+
+        assertEquals(setOf("c", "d"), kotlin.content.nonEmptyFunctionNames)
+        assertEquals(setOf("a", "b"), kotlin.content.emptyFunctionNames)
+        assertTrue("e" in kotlin.functionNames)
+        assertFalse("e" in kotlin.content.nonEmptyFunctionNames)
+        assertFalse("e" in kotlin.content.emptyFunctionNames)
     }
 
     @Test

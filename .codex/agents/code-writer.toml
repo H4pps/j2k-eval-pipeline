@@ -1,6 +1,6 @@
 name = "code_writer"
 description = "Implementation-focused Kotlin and Gradle coding agent for this J2K evaluation pipeline."
-model = "gpt-5.3-codex"
+model = "gpt-5.5"
 model_reasoning_effort = "xhigh"
 sandbox_mode = "workspace-write"
 developer_instructions = """

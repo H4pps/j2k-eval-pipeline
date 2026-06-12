@@ -1,6 +1,7 @@
 package iurii.bulanov.benchmark.evaluation
 
 import iurii.bulanov.benchmark.config.BenchmarkConfig
+import iurii.bulanov.benchmark.conversion.ConverterKind
 import iurii.bulanov.source.DiscoveredSourceFile
 import java.nio.file.Path
 
@@ -9,6 +10,7 @@ import java.nio.file.Path
  */
 data class EvaluationRequest(
     val configPath: Path,
+    val kind: ConverterKind,
     val generatedKotlinDirectory: Path?,
     val reportDirectory: Path?,
     val conversionReport: Path? = null,
@@ -39,6 +41,7 @@ data class EvaluationWarning(
  */
 data class EvaluationResult(
     val config: BenchmarkConfig,
+    val kind: ConverterKind,
     val checkoutDirectory: Path,
     val generatedKotlinDirectory: Path,
     val reportDirectory: Path,
@@ -183,6 +186,22 @@ data class ContentMetrics(
     val kotlinThrowCount: Int,
     val javaTryCount: Int,
     val kotlinTryCount: Int,
+    val javaFunctionDeclarationCount: Int,
+    val kotlinFunctionDeclarationCount: Int,
+    val contentShapePreservedFileCount: Int,
+    val contentShapeMismatchFileCount: Int,
+    val returnPreservationRatio: Double,
+    val branchPreservationRatio: Double,
+    val throwPreservationRatio: Double,
+    val tryPreservationRatio: Double,
+    val controlFlowFidelityScore: Double,
+    val contentShapePreservationRate: Double,
+    val javaReturnDensity: Double,
+    val kotlinReturnDensity: Double,
+    val returnStatementDensityPreservation: Double,
+    val javaBranchComplexityIndex: Double,
+    val kotlinBranchComplexityIndex: Double,
+    val branchComplexityIndexPreservation: Double,
     val findings: List<EvaluationWarning>,
 )
 
@@ -193,6 +212,12 @@ data class NullabilityMetrics(
     val javaNullableAnnotationCount: Int,
     val javaNotNullAnnotationCount: Int,
     val kotlinNullableTypeCount: Int,
+    val contradictoryNullabilityPatterns: Int,
+    val nullComparisonCount: Int,
+    val nullabilityCastCount: Int,
+    val safeCallCount: Int,
+    val totalNullabilityOperationCount: Int,
+    val nullabilityInferenceAccuracy: Double,
     val nullableAnnotationsNotPreserved: List<String>,
     val notNullAnnotationsBecameNullable: List<String>,
     val findings: List<EvaluationWarning>,

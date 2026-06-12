@@ -54,6 +54,7 @@ class EvaluatorRunner(
         val warnings = warnings(config.id, paths, kotlinDiscovery.directoryExists, checkout, conversion, metrics)
         return EvaluationResult(
             config = config,
+            kind = request.kind,
             checkoutDirectory = paths.checkoutDirectory,
             generatedKotlinDirectory = paths.generatedKotlinDirectory,
             reportDirectory = paths.reportDirectory,
@@ -308,9 +309,10 @@ private data class EvaluationPaths(
         ): EvaluationPaths =
             EvaluationPaths(
                 checkoutDirectory = Paths.get(checkoutDirectory).normalize(),
-                generatedKotlinDirectory = request.generatedKotlinDirectory ?: Path.of("build", "j2k", benchmarkId, "generated-kotlin"),
-                reportDirectory = request.reportDirectory ?: Path.of("build", "reports", "j2k-eval", benchmarkId),
-                conversionReport = request.conversionReport ?: Path.of("build", "j2k", benchmarkId, "conversion.json"),
+                generatedKotlinDirectory =
+                    request.generatedKotlinDirectory ?: Path.of("build", "j2k", benchmarkId, request.kind.id, "generated-kotlin"),
+                reportDirectory = request.reportDirectory ?: Path.of("build", "reports", "j2k-eval", benchmarkId, request.kind.id),
+                conversionReport = request.conversionReport ?: Path.of("build", "j2k", benchmarkId, request.kind.id, "conversion.json"),
                 checkoutReport = request.checkoutReport ?: Path.of("build", "benchmarks", benchmarkId, "checkout.json"),
             ).normalize()
     }

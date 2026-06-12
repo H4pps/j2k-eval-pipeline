@@ -56,21 +56,35 @@ ktlint {
 
 tasks.named<JavaExec>("runIde") {
     workingDir = rootProject.projectDir
-    jvmArgumentProviders.add(
-        CommandLineArgumentProvider {
-            listOf(
-                "-Djava.awt.headless=true",
-                "-Didea.kotlin.plugin.use.k2=false",
-                "-DbytecodeAnalysis.index.enabled=false",
-            )
-        },
-    )
 
     val benchmarkConfig = providers.gradleProperty("benchmarkConfig")
+    val kindProp = providers.gradleProperty("kind")
     val stagingDir = providers.gradleProperty("stagingDir")
     val generatedKotlinDir = providers.gradleProperty("generatedKotlinDir")
     val conversionReport = providers.gradleProperty("conversionReport")
     val logsDir = providers.gradleProperty("logsDir")
+    val indexingTimeoutMs = providers.gradleProperty("indexingTimeoutMs")
+    val ideaRuntimeDir = providers.gradleProperty("ideaRuntimeDir")
+
+    // The Kotlin plugin mode is JVM-global and chosen at IDE startup: K2 converter needs it on,
+    // K1 converters (old/new) need it off.
+    jvmArgumentProviders.add(
+        CommandLineArgumentProvider {
+            val useK2 = kindProp.orNull == "k2"
+            buildList {
+                add("-Djava.awt.headless=true")
+                add("-Didea.kotlin.plugin.use.k2=$useK2")
+                add("-DbytecodeAnalysis.index.enabled=false")
+                indexingTimeoutMs.orNull?.let { add("-Dj2k.indexing.timeoutMs=$it") }
+                ideaRuntimeDir.orNull?.let {
+                    val runtimeDir = rootProject.file(it)
+                    add("-Didea.config.path=${runtimeDir.resolve("config").path}")
+                    add("-Didea.system.path=${runtimeDir.resolve("system").path}")
+                    add("-Didea.log.path=${runtimeDir.resolve("log").path}")
+                }
+            }
+        },
+    )
 
     doFirst {
         val configPath =
@@ -81,6 +95,8 @@ tasks.named<JavaExec>("runIde") {
                 "j2k-convert",
                 "--config",
                 rootProject.file(configPath).path,
+                "--kind",
+                kindProp.orNull ?: "k1-old-dumb",
             )
 
         stagingDir.orNull?.let { runnerArgs += listOf("--staging-dir", it) }

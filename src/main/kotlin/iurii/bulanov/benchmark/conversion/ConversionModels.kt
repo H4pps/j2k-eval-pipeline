@@ -56,6 +56,7 @@ enum class ConversionStatus {
  */
 data class ConversionReport(
     val config: BenchmarkConfig,
+    val kind: ConverterKind,
     val status: ConversionStatus,
     val sourceJavaFileCount: Int,
     val generatedKotlinFileCount: Int,
